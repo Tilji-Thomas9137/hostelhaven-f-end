@@ -1,0 +1,31 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle with gradient -->
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ea580c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="buildingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fef3c7;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="24" fill="url(#logoGradient)"/>
+  
+  <!-- Building icon -->
+  <path d="M12 36V20L24 12L36 20V36H12Z" fill="url(#buildingGradient)" stroke="#ffffff" stroke-width="1.5"/>
+  
+  <!-- Windows -->
+  <rect x="16" y="22" width="4" height="4" fill="#ffffff" rx="1"/>
+  <rect x="28" y="22" width="4" height="4" fill="#ffffff" rx="1"/>
+  <rect x="16" y="28" width="4" height="4" fill="#ffffff" rx="1"/>
+  <rect x="28" y="28" width="4" height="4" fill="#ffffff" rx="1"/>
+  
+  <!-- Door -->
+  <rect x="22" y="32" width="4" height="4" fill="#ffffff" rx="1"/>
+  
+  <!-- Roof detail -->
+  <path d="M24 12L20 14V16L24 14L28 16V14L24 12Z" fill="#ffffff"/>
+</svg> 
