@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase, SITE_URL } from '../lib/supabase';
 import { loginSchema } from '../lib/validation';
-import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, CheckCircle } from 'lucide-react';
 import Logo from './Logo';
 import Navigation from './Navigation';
 import Footer from './Footer';
@@ -13,7 +13,18 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Check for success message from signup
+  useEffect(() => {
+    if (location.state?.message) {
+      setSuccessMessage(location.state.message);
+      // Clear the state to prevent showing the message again on refresh
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location, navigate]);
 
   const {
     register,
@@ -35,9 +46,14 @@ const Login = () => {
       });
 
       if (error) {
-        setError(error.message);
+        // Handle specific error cases
+        if (error.message.includes('Email not confirmed')) {
+          setError('Please check your email and click the confirmation link before logging in.');
+        } else {
+          setError(error.message);
+        }
       } else {
-        navigate('/student-dashboard');
+        navigate('/dashboard');
       }
     } catch (error) {
       setError('An unexpected error occurred. Please try again.');
@@ -51,7 +67,7 @@ const Login = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${SITE_URL}/auth/callback`
+          redirectTo: `http://localhost:5173/auth/callback`
         }
       });
 
@@ -74,7 +90,7 @@ const Login = () => {
           {/* Logo and Title */}
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <Logo size="xl" />
+              <Logo size="xl" animated={true} />
             </div>
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Welcome Back</h1>
             <p className="text-slate-600">Sign in to your account to continue</p>
@@ -141,6 +157,14 @@ const Login = () => {
                   <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
                 )}
               </div>
+
+              {/* Success Message */}
+              {successMessage && (
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center space-x-2">
+                  <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{successMessage}</span>
+                </div>
+              )}
 
               {/* Error Message */}
               {error && (

@@ -22,9 +22,33 @@ const AuthCallback = () => {
         }
 
         if (data.session) {
+          // Create user profile by calling the backend API
+          try {
+            const response = await fetch('http://localhost:3002/api/auth/me', {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${data.session.access_token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              console.log('User profile created/retrieved:', result);
+            } else {
+              console.error('Failed to create user profile:', response.statusText);
+            }
+          } catch (profileError) {
+            console.error('Profile handling error:', profileError);
+          }
+
           setStatus('success');
-          setMessage('Authentication successful! Redirecting to student dashboard...');
-          setTimeout(() => navigate('/student-dashboard'), 2000);
+          setMessage('Email confirmed successfully! Redirecting to login...');
+          setTimeout(() => navigate('/login', { 
+            state: { 
+              message: 'Email confirmed successfully! You can now log in to your account.' 
+            } 
+          }), 2000);
         } else {
           setStatus('error');
           setMessage('No session found. Please try again.');

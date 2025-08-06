@@ -58,15 +58,7 @@ import {
 import Logo from './Logo';
 
 const ServicesPage = () => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [expandedService, setExpandedService] = useState(null);
-
-  const navigationItems = [
-    { href: "/", label: "Home" },
-    { href: "/services", label: "Services" },
-    { href: "/about", label: "About" },
-    { href: "#contact", label: "Contact" }
-  ];
 
   const services = [
     {
@@ -252,88 +244,6 @@ const ServicesPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
-      {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo */}
-            <Link to="/" className="flex items-center space-x-3">
-              <Logo size="lg" />
-            </Link>
-
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center space-x-8">
-              {navigationItems.map((item) => (
-                <Link
-                  key={item.href}
-                  to={item.href}
-                  className="text-slate-700 hover:text-amber-600 transition-colors font-medium"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-
-            {/* CTA Buttons */}
-            <div className="hidden md:flex items-center space-x-4">
-              <Link
-                to="/login"
-                className="text-slate-700 hover:text-amber-600 transition-colors font-medium"
-              >
-                Login
-              </Link>
-              <Link
-                to="/signup"
-                className="bg-amber-600 text-white px-6 py-2 rounded-xl hover:bg-amber-700 transition-colors font-medium"
-              >
-                Get Started
-              </Link>
-            </div>
-
-            {/* Mobile menu button */}
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-700 hover:text-amber-600 transition-colors"
-            >
-              {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="md:hidden bg-white border-t border-amber-200/50">
-            <div className="px-4 py-6 space-y-4">
-              {navigationItems.map((item) => (
-                <Link
-                  key={item.href}
-                  to={item.href}
-                  className="block text-slate-700 hover:text-amber-600 transition-colors font-medium py-2"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  {item.label}
-                </Link>
-              ))}
-              <div className="pt-4 space-y-3">
-                <Link
-                  to="/login"
-                  className="block text-slate-700 hover:text-amber-600 transition-colors font-medium py-2"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/signup"
-                  className="block bg-amber-600 text-white px-6 py-2 rounded-xl hover:bg-amber-700 transition-colors font-medium text-center"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Get Started
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-      </nav>
 
       {/* Hero Section */}
       <section className="pt-20 pb-16 px-4 sm:px-6 lg:px-8">
@@ -509,58 +419,67 @@ const ServicesPage = () => {
       </section>
 
       {/* Footer */}
-      <footer className="bg-slate-900 text-white py-12 px-4 sm:px-6 lg:px-8">
+      <footer className="py-16 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-amber-50 to-orange-50 border-t border-amber-200">
         <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div>
-              <Logo size="lg" />
-              <p className="text-slate-400 mt-4">
-                Smart hostel management system for modern educational institutions.
+          <div className="grid md:grid-cols-4 gap-8">
+            <div className="space-y-4">
+              <div className="flex items-center space-x-3">
+                <Logo size="lg" standalone={true} animated={false} />
+                <div>
+                  <span className="text-xl font-bold text-slate-800">
+                    HostelHaven
+                  </span>
+                  <div className="text-xs text-slate-600">Smart Management</div>
+                </div>
+              </div>
+              <p className="text-slate-600 font-light">
+                Revolutionizing hostel management with AI-powered automation and real-time analytics.
               </p>
             </div>
             
-            <div>
-              <h3 className="text-lg font-semibold mb-4">Services</h3>
-              <ul className="space-y-2">
-                <li><a href="#" className="text-slate-400 hover:text-white transition-colors">Room Management</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-white transition-colors">Student Portal</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-white transition-colors">Admin Dashboard</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-white transition-colors">Payment Processing</a></li>
-              </ul>
-            </div>
+                         <div className="space-y-4">
+               <h3 className="text-slate-800 font-semibold">Product</h3>
+               <div className="space-y-2">
+                 <a href="#pricing" className="block text-slate-600 hover:text-amber-700 transition-colors">Room Management</a>
+                 <a href="#pricing" className="block text-slate-600 hover:text-amber-700 transition-colors">Student Portal</a>
+                 <a href="#pricing" className="block text-slate-600 hover:text-amber-700 transition-colors">Admin Dashboard</a>
+                 <a href="#pricing" className="block text-slate-600 hover:text-amber-700 transition-colors">Payment Processing</a>
+                 <Link to="/" className="block text-slate-600 hover:text-amber-700 transition-colors">Features</Link>
+               </div>
+             </div>
+             
+             <div className="space-y-4">
+               <h3 className="text-slate-800 font-semibold">Company</h3>
+               <div className="space-y-2">
+                 <Link to="/about" className="block text-slate-600 hover:text-amber-700 transition-colors">About Us</Link>
+                 <Link to="/about#contact" className="block text-slate-600 hover:text-amber-700 transition-colors">Contact</Link>
+                 <Link to="/" className="block text-slate-600 hover:text-amber-700 transition-colors">Support</Link>
+                 <Link to="/services" className="block text-slate-600 hover:text-amber-700 transition-colors">Services</Link>
+               </div>
+             </div>
             
-            <div>
-              <h3 className="text-lg font-semibold mb-4">Company</h3>
-              <ul className="space-y-2">
-                <li><Link to="/about" className="text-slate-400 hover:text-white transition-colors">About Us</Link></li>
-                <li><a href="#" className="text-slate-400 hover:text-white transition-colors">Contact</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-white transition-colors">Support</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-white transition-colors">Blog</a></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h3 className="text-lg font-semibold mb-4">Connect</h3>
+            <div className="space-y-4">
+              <h3 className="text-slate-800 font-semibold">Connect</h3>
               <div className="flex space-x-4">
-                <a href="#" className="text-slate-400 hover:text-white transition-colors">
+                <a href="#" className="text-slate-600 hover:text-amber-700 transition-colors">
                   <Facebook className="w-5 h-5" />
                 </a>
-                <a href="#" className="text-slate-400 hover:text-white transition-colors">
+                <a href="#" className="text-slate-600 hover:text-amber-700 transition-colors">
                   <Twitter className="w-5 h-5" />
                 </a>
-                <a href="#" className="text-slate-400 hover:text-white transition-colors">
+                <a href="#" className="text-slate-600 hover:text-amber-700 transition-colors">
                   <Instagram className="w-5 h-5" />
                 </a>
-                <a href="#" className="text-slate-400 hover:text-white transition-colors">
+                <a href="#" className="text-slate-600 hover:text-amber-700 transition-colors">
                   <Linkedin className="w-5 h-5" />
                 </a>
               </div>
             </div>
           </div>
           
-          <div className="border-t border-slate-800 mt-8 pt-8 text-center">
-            <p className="text-slate-400">
-              © 2024 HostelHaven. All rights reserved.
+          <div className="border-t border-amber-200 mt-12 pt-8 text-center">
+            <p className="text-slate-600 font-light">
+              © 2024 HostelHaven. All rights reserved. Built with ❤️ for modern hostel management.
             </p>
           </div>
         </div>

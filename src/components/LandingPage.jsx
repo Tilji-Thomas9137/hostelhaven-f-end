@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { 
   Building2, 
   Users, 
@@ -46,7 +46,6 @@ import {
 import Logo from './Logo';
 
 const LandingPage = () => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [activeFeature, setActiveFeature] = useState(0);
@@ -59,14 +58,7 @@ const LandingPage = () => {
   });
 
   const heroRef = useRef(null);
-
-  const navigationItems = [
-    { href: "/services", label: "Services" },
-    { href: "/about", label: "About" },
-    { href: "#facilities", label: "Facilities" },
-    { href: "#support", label: "Support" },
-    { href: "#stats", label: "Stats" }
-  ];
+  const location = useLocation();
 
   // Mouse tracking for parallax effect
   useEffect(() => {
@@ -138,21 +130,36 @@ const LandingPage = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Loading effect
+  // Loading effect - only show on initial page load, not when navigating from other pages
   useEffect(() => {
-    const timer = setTimeout(() => {
+    // Skip loading screen if navigating from another page
+    if (location.state) {
       setIsLoading(false);
-    }, 1500); // Show loading for 1.5 seconds
+    } else {
+      // Only show loading on direct page load (not navigation)
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 1500); // Show loading for 1.5 seconds only on initial page load
 
-    return () => clearTimeout(timer);
-  }, []);
-
-  const scrollToSection = (sectionId) => {
-    const element = document.getElementById(sectionId);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+      return () => clearTimeout(timer);
     }
-  };
+  }, [location.state]);
+
+  // Handle scroll to section when navigating from other pages
+  useEffect(() => {
+    if (location.state?.scrollTo) {
+      const sectionId = location.state.scrollTo;
+      const element = document.getElementById(sectionId);
+      if (element) {
+        // Small delay to ensure the page is fully loaded
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
+    }
+  }, [location.state]);
+
+
 
   const features = [
     {
@@ -227,119 +234,7 @@ const LandingPage = () => {
         />
       </div>
 
-      {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm transition-all duration-300">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo */}
-            <Link to="/" className="flex items-center space-x-3 group">
-              <div className="transform group-hover:scale-110 transition-transform duration-300">
-                <Logo size="lg" />
-              </div>
-            </Link>
 
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center space-x-8">
-              {navigationItems.map((item) => (
-                item.href.startsWith('/') ? (
-                  <Link
-                    key={item.href}
-                    to={item.href}
-                    className="relative text-slate-700 hover:text-amber-600 transition-colors font-medium group"
-                  >
-                    {item.label}
-                    <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-amber-600 transition-all duration-300 group-hover:w-full"></span>
-                  </Link>
-                ) : (
-                  <button
-                    key={item.href}
-                    onClick={() => scrollToSection(item.href.substring(1))}
-                    className="relative text-slate-700 hover:text-amber-600 transition-colors font-medium group"
-                  >
-                    {item.label}
-                    <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-amber-600 transition-all duration-300 group-hover:w-full"></span>
-                  </button>
-                )
-              ))}
-            </div>
-
-            {/* CTA Buttons */}
-            <div className="hidden md:flex items-center space-x-4">
-              <Link
-                to="/login"
-                className="text-slate-700 hover:text-amber-600 transition-colors font-medium relative group"
-              >
-                Login
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-amber-600 transition-all duration-300 group-hover:w-full"></span>
-              </Link>
-              <Link
-                to="/signup"
-                className="bg-amber-600 text-white px-6 py-2 rounded-xl hover:bg-amber-700 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-amber-500/25 font-medium"
-              >
-                Get Started
-              </Link>
-            </div>
-
-            {/* Mobile menu button */}
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-700 hover:text-amber-600 transition-colors relative group"
-            >
-              <div className="relative">
-                {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                <div className="absolute inset-0 bg-amber-100 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="md:hidden bg-white border-t border-amber-200/50 animate-slideDown">
-            <div className="px-4 py-6 space-y-4">
-              {navigationItems.map((item) => (
-                item.href.startsWith('/') ? (
-                  <Link
-                    key={item.href}
-                    to={item.href}
-                    className="block w-full text-left text-slate-700 hover:text-amber-600 transition-colors font-medium py-2 hover:bg-amber-50 rounded-lg px-3"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    {item.label}
-                  </Link>
-                ) : (
-                  <button
-                    key={item.href}
-                    onClick={() => {
-                      scrollToSection(item.href.substring(1));
-                      setIsMenuOpen(false);
-                    }}
-                    className="block w-full text-left text-slate-700 hover:text-amber-600 transition-colors font-medium py-2 hover:bg-amber-50 rounded-lg px-3"
-                  >
-                    {item.label}
-                  </button>
-                )
-              ))}
-              <div className="pt-4 space-y-3">
-                <Link
-                  to="/login"
-                  className="block text-slate-700 hover:text-amber-600 transition-colors font-medium py-2 hover:bg-amber-50 rounded-lg px-3"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/signup"
-                  className="block bg-amber-600 text-white px-6 py-2 rounded-xl hover:bg-amber-700 transition-colors font-medium text-center transform hover:scale-105"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Get Started
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-      </nav>
 
       {/* Hero Section */}
       <section ref={heroRef} className="pt-20 pb-16 px-4 sm:px-6 lg:px-8 relative">
@@ -391,7 +286,12 @@ const LandingPage = () => {
                   </div>
                 </Link>
                 <button
-                  onClick={() => scrollToSection('features')}
+                  onClick={() => {
+                    const element = document.getElementById('features');
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
                   className="px-8 py-4 border-2 border-amber-600 text-amber-600 rounded-xl font-semibold hover:bg-amber-600 hover:text-white transition-all duration-300 transform hover:scale-105"
                 >
                   Learn More
@@ -704,51 +604,51 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-4 gap-8">
             <div className="space-y-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl flex items-center justify-center">
-                  <Building2 className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <span className="text-xl font-bold text-slate-800">
-                    HostelHaven
-                  </span>
-                  <div className="text-xs text-slate-600">Smart Management</div>
-                </div>
+                          <div className="flex items-center space-x-3">
+              <Logo size="lg" standalone={true} animated={false} />
+              <div>
+                <span className="text-xl font-bold text-slate-800">
+                  HostelHaven
+                </span>
+                <div className="text-xs text-slate-600">Smart Management</div>
               </div>
+            </div>
               <p className="text-slate-600 font-light">
                 Revolutionizing hostel management with AI-powered automation and real-time analytics.
               </p>
             </div>
             
-            <div className="space-y-4">
-              <h3 className="text-slate-800 font-semibold">Product</h3>
-              <div className="space-y-2">
-                <button onClick={() => scrollToSection('features')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Features</button>
-                <button onClick={() => scrollToSection('facilities')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Facilities</button>
-                <button onClick={() => scrollToSection('stats')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Stats</button>
-                <Link to="/signup" className="block text-slate-600 hover:text-amber-700 transition-colors">Get Started</Link>
-              </div>
-            </div>
-            
-            <div className="space-y-4">
-              <h3 className="text-slate-800 font-semibold">Company</h3>
-              <div className="space-y-2">
-                <button onClick={() => scrollToSection('about')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">About</button>
-                <button onClick={() => scrollToSection('support')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Support</button>
-                <Link to="/signup" className="block text-slate-600 hover:text-amber-700 transition-colors">Sign Up</Link>
-                <Link to="/login" className="block text-slate-600 hover:text-amber-700 transition-colors">Sign In</Link>
-              </div>
-            </div>
-            
-            <div className="space-y-4">
-              <h3 className="text-slate-800 font-semibold">Support</h3>
-              <div className="space-y-2">
-                <span className="block text-slate-600 hover:text-amber-700 transition-colors">Help Center</span>
-                <span className="block text-slate-600 hover:text-amber-700 transition-colors">Documentation</span>
-                <span className="block text-slate-600 hover:text-amber-700 transition-colors">Live Chat</span>
-                <span className="block text-slate-600 hover:text-amber-700 transition-colors">Video Tutorials</span>
-              </div>
-            </div>
+                         <div className="space-y-4">
+               <h3 className="text-slate-800 font-semibold">Product</h3>
+               <div className="space-y-2">
+                 <button onClick={() => scrollToSection('features')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Features</button>
+                 <button onClick={() => scrollToSection('facilities')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Facilities</button>
+                 <button onClick={() => scrollToSection('stats')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Stats</button>
+                 <Link to="/services" className="block text-slate-600 hover:text-amber-700 transition-colors">Services</Link>
+                 <Link to="/signup" className="block text-slate-600 hover:text-amber-700 transition-colors">Get Started</Link>
+               </div>
+             </div>
+             
+             <div className="space-y-4">
+               <h3 className="text-slate-800 font-semibold">Company</h3>
+               <div className="space-y-2">
+                 <Link to="/about" className="block text-slate-600 hover:text-amber-700 transition-colors">About Us</Link>
+                 <button onClick={() => scrollToSection('support')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Support</button>
+                 <Link to="/services" className="block text-slate-600 hover:text-amber-700 transition-colors">Services</Link>
+                 <Link to="/signup" className="block text-slate-600 hover:text-amber-700 transition-colors">Sign Up</Link>
+                 <Link to="/login" className="block text-slate-600 hover:text-amber-700 transition-colors">Sign In</Link>
+               </div>
+             </div>
+             
+             <div className="space-y-4">
+               <h3 className="text-slate-800 font-semibold">Support</h3>
+               <div className="space-y-2">
+                 <button onClick={() => scrollToSection('support')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Help Center</button>
+                 <Link to="/services" className="block text-slate-600 hover:text-amber-700 transition-colors">Documentation</Link>
+                 <button onClick={() => scrollToSection('support')} className="block w-full text-left text-slate-600 hover:text-amber-700 transition-colors">Live Chat</button>
+                 <Link to="/services" className="block text-slate-600 hover:text-amber-700 transition-colors">Video Tutorials</Link>
+               </div>
+             </div>
           </div>
           
           <div className="border-t border-amber-200 mt-12 pt-8 text-center">

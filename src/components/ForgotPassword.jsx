@@ -67,7 +67,7 @@ const ForgotPassword = () => {
           {/* Logo and Title */}
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <Logo size="xl" />
+              <Logo size="xl" animated={true} />
             </div>
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Forgot Password</h1>
             <p className="text-slate-600">

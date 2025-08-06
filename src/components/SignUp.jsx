@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase, SITE_URL } from '../lib/supabase';
 import { registerSchema } from '../lib/validation';
-import { Eye, EyeOff, Mail, Lock, User, Building2, Phone } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, Building2, Phone, CheckCircle, XCircle } from 'lucide-react';
 import Logo from './Logo';
 import Navigation from './Navigation';
 import Footer from './Footer';
@@ -14,6 +14,8 @@ const SignUp = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [emailStatus, setEmailStatus] = useState('idle'); // idle, checking, available, unavailable
+  const [emailMessage, setEmailMessage] = useState('');
   const navigate = useNavigate();
 
   const {
@@ -26,7 +28,59 @@ const SignUp = () => {
     mode: 'onChange'
   });
 
+  const watchedEmail = watch('email');
+
+  // Debounced email availability check
+  const checkEmailAvailability = useCallback(async (email) => {
+    if (!email || email.length < 3) {
+      setEmailStatus('idle');
+      setEmailMessage('');
+      return;
+    }
+
+    setEmailStatus('checking');
+    setEmailMessage('Checking availability...');
+
+    try {
+      const response = await fetch(`http://localhost:3002/api/auth/check-email?email=${encodeURIComponent(email)}`);
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.available) {
+          setEmailStatus('available');
+          setEmailMessage('Email is available');
+        } else {
+          setEmailStatus('unavailable');
+          setEmailMessage('Email is already registered');
+        }
+      } else {
+        setEmailStatus('idle');
+        setEmailMessage('');
+      }
+    } catch (error) {
+      setEmailStatus('idle');
+      setEmailMessage('');
+    }
+  }, []);
+
+  // Debounced effect for email checking
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (watchedEmail) {
+        checkEmailAvailability(watchedEmail);
+      }
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timeoutId);
+  }, [watchedEmail, checkEmailAvailability]);
+
   const onSubmit = async (data) => {
+    // Prevent submission if email is unavailable
+    if (emailStatus === 'unavailable') {
+      setError('Please choose a different email address.');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
 
@@ -39,14 +93,22 @@ const SignUp = () => {
             full_name: data.fullName,
             phone: data.phone,
             role: data.role
-          }
+          },
+          emailRedirectTo: `http://localhost:5173/auth/callback`
         }
       });
 
       if (error) {
         setError(error.message);
       } else {
-        navigate('/dashboard');
+        // Show success message and navigate to login
+        setError(''); // Clear any previous errors
+        // You can add a success state here if needed
+        navigate('/login', { 
+          state: { 
+            message: 'Account created successfully! Please check your email and click the confirmation link before logging in.' 
+          } 
+        });
       }
     } catch (error) {
       setError('An unexpected error occurred. Please try again.');
@@ -60,7 +122,7 @@ const SignUp = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${SITE_URL}/auth/callback`
+          redirectTo: `http://localhost:5173/auth/callback`
         }
       });
 
@@ -83,7 +145,7 @@ const SignUp = () => {
           {/* Logo and Title */}
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
-              <Logo size="xl" />
+              <Logo size="xl" animated={true} />
             </div>
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Create Account</h1>
             <p className="text-slate-600">Join HostelHaven to get started</p>
@@ -125,14 +187,38 @@ const SignUp = () => {
                     type="email"
                     id="email"
                     {...register('email')}
-                    className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${
-                      errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300'
+                    className={`w-full pl-10 pr-12 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${
+                      errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 
+                      emailStatus === 'available' ? 'border-green-300 focus:border-green-500 focus:ring-green-500' :
+                      emailStatus === 'unavailable' ? 'border-red-300 focus:border-red-500 focus:ring-red-500' :
+                      'border-slate-300'
                     }`}
                     placeholder="Enter your email"
                   />
+                  {/* Email Status Icon */}
+                  {emailStatus === 'checking' && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      <div className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                  {emailStatus === 'available' && (
+                    <CheckCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500" />
+                  )}
+                  {emailStatus === 'unavailable' && (
+                    <XCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500" />
+                  )}
                 </div>
                 {errors.email && (
                   <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+                )}
+                {emailMessage && !errors.email && (
+                  <p className={`mt-1 text-sm ${
+                    emailStatus === 'available' ? 'text-green-600' :
+                    emailStatus === 'unavailable' ? 'text-red-600' :
+                    'text-amber-600'
+                  }`}>
+                    {emailMessage}
+                  </p>
                 )}
               </div>
 
