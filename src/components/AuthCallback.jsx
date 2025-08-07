@@ -35,20 +35,25 @@ const AuthCallback = () => {
             if (response.ok) {
               const result = await response.json();
               console.log('User profile created/retrieved:', result);
+              
+              // Redirect directly to dashboard after successful authentication
+              setStatus('success');
+              setMessage('Authentication successful! Redirecting to dashboard...');
+              setTimeout(() => navigate('/dashboard'), 2000);
             } else {
               console.error('Failed to create user profile:', response.statusText);
+              // Still redirect to dashboard even if profile creation fails
+              setStatus('success');
+              setMessage('Authentication successful! Redirecting to dashboard...');
+              setTimeout(() => navigate('/dashboard'), 2000);
             }
           } catch (profileError) {
             console.error('Profile handling error:', profileError);
+            // Still redirect to dashboard even if profile handling fails
+            setStatus('success');
+            setMessage('Authentication successful! Redirecting to dashboard...');
+            setTimeout(() => navigate('/dashboard'), 2000);
           }
-
-          setStatus('success');
-          setMessage('Email confirmed successfully! Redirecting to login...');
-          setTimeout(() => navigate('/login', { 
-            state: { 
-              message: 'Email confirmed successfully! You can now log in to your account.' 
-            } 
-          }), 2000);
         } else {
           setStatus('error');
           setMessage('No session found. Please try again.');
