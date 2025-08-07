@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import StudentDashboard from './StudentDashboard';
-import AdminDashboard from './AdminDashboard';
-import WardenDashboard from './WardenDashboard';
-import ParentDashboard from './ParentDashboard';
-import OperationsDashboard from './OperationsDashboard';
+import StudentDashboard from './dashboard/StudentDashboard';
+import AdminDashboard from './dashboard/AdminDashboard';
+import WardenDashboard from './dashboard/WardenDashboard';
+import ParentDashboard from './dashboard/ParentDashboard';
+import OperationsDashboard from './dashboard/OperationsDashboard';
 
 const Dashboard = () => {
   const navigate = useNavigate();

@@ -4,7 +4,7 @@ import LandingPage from './components/LandingPage';
 import SignUp from './components/SignUp';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
-import StudentDashboard from './components/StudentDashboard';
+import StudentDashboard from './components/dashboard/StudentDashboard';
 import AuthCallback from './components/AuthCallback';
 import ForgotPassword from './components/ForgotPassword';
 import ResetPassword from './components/ResetPassword';

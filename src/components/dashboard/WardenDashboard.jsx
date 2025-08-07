@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { 
   Building2, 
   Users, 
@@ -32,7 +32,7 @@ import {
   BookOpen,
   GraduationCap
 } from 'lucide-react';
-import Logo from './Logo';
+import Logo from '../Logo';
 
 const WardenDashboard = () => {
   const navigate = useNavigate();
