@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { redirectToRoleBasedDashboard } from '../lib/supabaseUtils';
 import { Building2, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 const AuthCallback = () => {
@@ -36,23 +37,23 @@ const AuthCallback = () => {
               const result = await response.json();
               console.log('User profile created/retrieved:', result);
               
-              // Redirect directly to dashboard after successful authentication
+              // Use role-based redirection
               setStatus('success');
               setMessage('Authentication successful! Redirecting to dashboard...');
-              setTimeout(() => navigate('/dashboard'), 2000);
+              setTimeout(() => redirectToRoleBasedDashboard(data.session, navigate), 2000);
             } else {
               console.error('Failed to create user profile:', response.statusText);
               // Still redirect to dashboard even if profile creation fails
               setStatus('success');
               setMessage('Authentication successful! Redirecting to dashboard...');
-              setTimeout(() => navigate('/dashboard'), 2000);
+              setTimeout(() => redirectToRoleBasedDashboard(data.session, navigate), 2000);
             }
           } catch (profileError) {
             console.error('Profile handling error:', profileError);
             // Still redirect to dashboard even if profile handling fails
             setStatus('success');
             setMessage('Authentication successful! Redirecting to dashboard...');
-            setTimeout(() => navigate('/dashboard'), 2000);
+            setTimeout(() => redirectToRoleBasedDashboard(data.session, navigate), 2000);
           }
         } else {
           setStatus('error');

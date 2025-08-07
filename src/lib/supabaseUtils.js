@@ -58,6 +58,38 @@ export const authUtils = {
   }
 }
 
+/**
+ * Get user role and redirect to appropriate dashboard
+ * @param {Object} session - Supabase session object
+ * @param {Function} navigate - React Router navigate function
+ */
+export const redirectToRoleBasedDashboard = async (session, navigate) => {
+  try {
+    const response = await fetch('http://localhost:3002/api/auth/me', {
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      const userRole = result.data.user.role;
+      
+      // Navigate to the main dashboard - it will handle role-based routing
+      navigate('/dashboard');
+    } else {
+      // Fallback to session user data
+      const userRole = session.user.user_metadata?.role || 'student';
+      navigate('/dashboard');
+    }
+  } catch (error) {
+    console.error('Error fetching user data for redirection:', error);
+    // Fallback to dashboard
+    navigate('/dashboard');
+  }
+};
+
 // User management functions
 export const userUtils = {
   // Get user profile

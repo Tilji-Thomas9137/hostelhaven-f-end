@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase, SITE_URL } from '../lib/supabase';
 import { loginSchema } from '../lib/validation';
+import { redirectToRoleBasedDashboard } from '../lib/supabaseUtils';
 import { Eye, EyeOff, Mail, Lock, CheckCircle } from 'lucide-react';
 import Logo from './Logo';
 import Navigation from './Navigation';
@@ -53,7 +54,8 @@ const Login = () => {
           setError(error.message);
         }
       } else {
-        navigate('/dashboard');
+        // Use role-based redirection
+        await redirectToRoleBasedDashboard(authData, navigate);
       }
     } catch (error) {
       setError('An unexpected error occurred. Please try again.');
@@ -78,6 +80,8 @@ const Login = () => {
       setError('Google sign-in failed. Please try again.');
     }
   };
+
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">

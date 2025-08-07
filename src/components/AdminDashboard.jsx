@@ -54,7 +54,7 @@ const AdminDashboard = () => {
           return;
         }
 
-        const response = await fetch('http://localhost:3001/api/auth/me', {
+        const response = await fetch('http://localhost:3002/api/auth/me', {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
