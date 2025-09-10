@@ -5,11 +5,14 @@ import SignUp from './components/SignUp';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import StudentDashboard from './components/dashboard/StudentDashboard';
+import AdminDashboard from './components/dashboard/AdminDashboard';
+import TestDashboard from './components/TestDashboard';
 import AuthCallback from './components/AuthCallback';
 import ForgotPassword from './components/ForgotPassword';
 import ResetPassword from './components/ResetPassword';
 import ServicesPage from './components/ServicesPage';
 import AboutPage from './components/AboutPage';
+import { NotificationProvider } from './contexts/NotificationContext';
 import './App.css';
 
 // Component to conditionally render navigation
@@ -33,6 +36,8 @@ const AppContent = () => {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/student-dashboard" element={<StudentDashboard />} />
+        <Route path="/admin-dashboard" element={<AdminDashboard />} />
+        <Route path="/test" element={<TestDashboard />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/about" element={<AboutPage />} />
@@ -44,7 +49,9 @@ const AppContent = () => {
 function App() {
   return (
     <Router>
-      <AppContent />
+      <NotificationProvider>
+        <AppContent />
+      </NotificationProvider>
     </Router>
   );
 }

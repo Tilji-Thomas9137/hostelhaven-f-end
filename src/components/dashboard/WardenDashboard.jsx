@@ -8,41 +8,25 @@ import {
   LogOut,
   User,
   Settings,
-  Bell,
-  Calendar,
+  Shield,
+  Gavel,
+  Heart,
+  UserCheck,
+  AlertTriangle,
   FileText,
-  CreditCard,
-  AlertCircle,
-  CheckCircle,
-  Clock,
-  MapPin,
-  Phone,
-  Mail,
+  Eye,
   Edit,
   Plus,
-  Search,
-  Filter,
-  Download,
-  Shield,
-  Eye,
   Trash2,
-  Heart,
   Activity,
-  Award,
-  BookOpen,
-  GraduationCap
+  CheckCircle
 } from 'lucide-react';
-import Logo from '../Logo';
 
 const WardenDashboard = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
-  const [disciplinaryCases, setDisciplinaryCases] = useState([]);
-  const [studentWelfare, setStudentWelfare] = useState([]);
-  const [roomInspections, setRoomInspections] = useState([]);
-  const [emergencyContacts, setEmergencyContacts] = useState([]);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -64,7 +48,10 @@ const WardenDashboard = () => {
         if (response.ok) {
           const result = await response.json();
           setUser(result.data.user);
-          fetchMockData();
+          
+          if (!['warden', 'admin'].includes(result.data.user.role)) {
+            setUser({...result.data.user, isNotWarden: true});
+          }
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -75,96 +62,6 @@ const WardenDashboard = () => {
 
     fetchUserData();
   }, [navigate]);
-
-  const fetchMockData = () => {
-    // Mock disciplinary cases
-    setDisciplinaryCases([
-      {
-        id: '1',
-        studentName: 'John Smith',
-        room: '101',
-        issue: 'Noise violation',
-        severity: 'medium',
-        status: 'active',
-        reportedDate: '2024-02-15',
-        description: 'Excessive noise after 10 PM'
-      },
-      {
-        id: '2',
-        studentName: 'Jane Doe',
-        room: '205',
-        issue: 'Unauthorized guests',
-        severity: 'high',
-        status: 'resolved',
-        reportedDate: '2024-02-10',
-        description: 'Found unauthorized guests in room'
-      }
-    ]);
-
-    // Mock student welfare
-    setStudentWelfare([
-      {
-        id: '1',
-        studentName: 'Mike Johnson',
-        room: '103',
-        concern: 'Academic stress',
-        status: 'monitoring',
-        lastCheck: '2024-02-20',
-        notes: 'Student showing signs of stress'
-      },
-      {
-        id: '2',
-        studentName: 'Sarah Wilson',
-        room: '208',
-        concern: 'Homesickness',
-        status: 'improving',
-        lastCheck: '2024-02-18',
-        notes: 'Student adapting well to hostel life'
-      }
-    ]);
-
-    // Mock room inspections
-    setRoomInspections([
-      {
-        id: '1',
-        room: '101',
-        floor: 1,
-        status: 'scheduled',
-        scheduledDate: '2024-02-25',
-        lastInspection: '2024-01-15',
-        notes: 'Routine monthly inspection'
-      },
-      {
-        id: '2',
-        room: '205',
-        floor: 2,
-        status: 'completed',
-        scheduledDate: '2024-02-20',
-        lastInspection: '2024-02-20',
-        notes: 'Room in good condition'
-      }
-    ]);
-
-    // Mock emergency contacts
-    setEmergencyContacts([
-      {
-        id: '1',
-        name: 'Dr. Emily Brown',
-        role: 'Medical Officer',
-        phone: '+1-555-0101',
-        email: 'medical@hostelhaven.com',
-        availability: '24/7'
-      },
-      {
-        id: '2',
-        name: 'Security Team',
-        role: 'Security',
-        phone: '+1-555-0102',
-        email: 'security@hostelhaven.com',
-        availability: '24/7'
-      }
-    ]);
-  };
 
   const handleLogout = async () => {
     try {
@@ -185,7 +82,7 @@ const WardenDashboard = () => {
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto mb-4"></div>
-          <p className="text-slate-600">Loading dashboard...</p>
+          <p className="text-slate-600">Loading warden dashboard...</p>
         </div>
       </div>
     );
@@ -196,257 +93,204 @@ const WardenDashboard = () => {
     return null;
   }
 
+  if (user.isNotWarden || !['warden', 'admin'].includes(user.role)) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
+        <div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md mx-4">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Access Denied</h2>
+          <p className="text-slate-600 mb-4">
+            You need warden privileges to access this dashboard.
+          </p>
+          <p className="text-sm text-slate-500 mb-6">
+            Current role: <span className="font-medium">{user.role || 'student'}</span>
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+            >
+              Go to My Dashboard
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
-    { id: 'disciplinary', label: 'Disciplinary Cases', icon: AlertCircle },
+    { id: 'disciplinary', label: 'Disciplinary', icon: Gavel },
     { id: 'welfare', label: 'Student Welfare', icon: Heart },
-    { id: 'inspections', label: 'Room Inspections', icon: Building2 },
-    { id: 'emergency', label: 'Emergency Contacts', icon: Phone }
+    { id: 'inspections', label: 'Room Inspections', icon: UserCheck },
+    { id: 'emergency', label: 'Emergency Contacts', icon: AlertTriangle },
+    { id: 'reports', label: 'Reports', icon: FileText },
+    { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
   const renderOverview = () => (
-    <div className="space-y-6">
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-red-100 text-red-600 rounded-xl flex items-center justify-center">
-              <AlertCircle className="w-5 h-5" />
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Total Students</h3>
+              <p className="text-2xl font-bold text-slate-900">120</p>
+              <p className="text-sm text-slate-600">Under supervision</p>
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Active Cases</h3>
-          <p className="text-2xl font-bold text-slate-900">3</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
-              <Heart className="w-5 h-5" />
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center">
+              <Gavel className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Active Cases</h3>
+              <p className="text-2xl font-bold text-slate-900">3</p>
+              <p className="text-sm text-slate-600">Requiring attention</p>
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Welfare Cases</h3>
-          <p className="text-2xl font-bold text-slate-900">5</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-              <Building2 className="w-5 h-5" />
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-yellow-100 text-yellow-600 rounded-xl flex items-center justify-center">
+              <UserCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Pending Inspections</h3>
+              <p className="text-2xl font-bold text-slate-900">5</p>
+              <p className="text-sm text-slate-600">Scheduled this week</p>
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Inspections</h3>
-          <p className="text-2xl font-bold text-slate-900">12</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
-              <Phone className="w-5 h-5" />
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
+              <CheckCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Resolved Issues</h3>
+              <p className="text-2xl font-bold text-slate-900">15</p>
+              <p className="text-sm text-slate-600">This month</p>
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Emergency Calls</h3>
-          <p className="text-2xl font-bold text-slate-900">2</p>
         </div>
       </div>
 
-      {/* Recent Activity */}
       <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-4">Recent Activity</h2>
-        <div className="space-y-4">
-          <div className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl">
-            <div className="w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center">
-              <AlertCircle className="w-4 h-4" />
-            </div>
-            <div className="flex-1">
-              <p className="font-medium text-slate-800">New disciplinary case reported</p>
-              <p className="text-sm text-slate-600">2 hours ago</p>
-            </div>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-slate-800">Recent Activity</h2>
+          <div className="text-sm text-slate-500">Last 24 hours</div>
+        </div>
+        
+        <div className="text-center py-12">
+          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Activity className="w-8 h-8 text-slate-400" />
           </div>
-          
-          <div className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl">
-            <div className="w-8 h-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
-              <Heart className="w-4 h-4" />
-            </div>
-            <div className="flex-1">
-              <p className="font-medium text-slate-800">Student welfare check completed</p>
-              <p className="text-sm text-slate-600">1 day ago</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl">
-            <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
-              <Building2 className="w-4 h-4" />
-            </div>
-            <div className="flex-1">
-              <p className="font-medium text-slate-800">Room inspection scheduled</p>
-              <p className="text-sm text-slate-600">2 days ago</p>
-            </div>
-          </div>
+          <p className="text-slate-500 font-medium">No recent activity</p>
+          <p className="text-sm text-slate-400 mt-1">Recent warden activities will appear here</p>
         </div>
       </div>
     </div>
   );
 
-  const renderDisciplinaryCases = () => (
+  const renderDisciplinary = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800">Disciplinary Cases</h2>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-          <Plus className="w-4 h-4" />
-          <span>New Case</span>
-        </button>
+        <div className="flex items-center space-x-4">
+          <select className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500">
+            <option value="">All Severity</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
+            <Plus className="w-4 h-4" />
+            <span>New Case</span>
+          </button>
+        </div>
       </div>
       
-      <div className="space-y-4">
-        {disciplinaryCases.map((case_) => (
-          <div key={case_.id} className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-2">
-                  <h3 className="text-lg font-semibold text-slate-800">{case_.studentName}</h3>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    case_.severity === 'high' 
-                      ? 'bg-red-100 text-red-800' 
-                      : case_.severity === 'medium'
-                      ? 'bg-yellow-100 text-yellow-800'
-                      : 'bg-green-100 text-green-800'
-                  }`}>
-                    {case_.severity}
-                  </span>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    case_.status === 'active' 
-                      ? 'bg-red-100 text-red-800' 
-                      : 'bg-green-100 text-green-800'
-                  }`}>
-                    {case_.status}
-                  </span>
-                </div>
-                <p className="text-slate-600 mb-3">{case_.description}</p>
-                <div className="flex items-center space-x-4 text-sm text-slate-500">
-                  <span>Room: {case_.room}</span>
-                  <span>Reported: {case_.reportedDate}</span>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button className="flex items-center space-x-2 px-3 py-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
-                  <Eye className="w-4 h-4" />
-                  <span>View</span>
-                </button>
-                <button className="flex items-center space-x-2 px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                  <Edit className="w-4 h-4" />
-                  <span>Update</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Gavel className="w-8 h-8 text-slate-400" />
+        </div>
+        <p className="text-slate-500 font-medium">No disciplinary cases</p>
+        <p className="text-sm text-slate-400 mt-1">Disciplinary cases will appear here</p>
       </div>
     </div>
   );
 
-  const renderWelfare = () => (
+  const renderStudentWelfare = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800">Student Welfare</h2>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-          <Plus className="w-4 h-4" />
-          <span>Add Case</span>
-        </button>
+        <h2 className="text-xl font-semibold text-slate-800">Student Welfare Cases</h2>
+        <div className="flex items-center space-x-4">
+          <select className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500">
+            <option value="">All Priority</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
+            <Plus className="w-4 h-4" />
+            <span>New Case</span>
+          </button>
+        </div>
       </div>
       
-      <div className="space-y-4">
-        {studentWelfare.map((welfare) => (
-          <div key={welfare.id} className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-2">
-                  <h3 className="text-lg font-semibold text-slate-800">{welfare.studentName}</h3>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    welfare.status === 'monitoring' 
-                      ? 'bg-yellow-100 text-yellow-800' 
-                      : 'bg-green-100 text-green-800'
-                  }`}>
-                    {welfare.status}
-                  </span>
-                </div>
-                <p className="text-slate-600 mb-3">{welfare.concern}</p>
-                <div className="flex items-center space-x-4 text-sm text-slate-500">
-                  <span>Room: {welfare.room}</span>
-                  <span>Last Check: {welfare.lastCheck}</span>
-                </div>
-                <p className="text-sm text-slate-600 mt-2">{welfare.notes}</p>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button className="flex items-center space-x-2 px-3 py-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
-                  <Eye className="w-4 h-4" />
-                  <span>View</span>
-                </button>
-                <button className="flex items-center space-x-2 px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                  <Edit className="w-4 h-4" />
-                  <span>Update</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Heart className="w-8 h-8 text-slate-400" />
+        </div>
+        <p className="text-slate-500 font-medium">No welfare cases</p>
+        <p className="text-sm text-slate-400 mt-1">Student welfare cases will appear here</p>
       </div>
     </div>
   );
 
-  const renderInspections = () => (
+  const renderRoomInspections = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800">Room Inspections</h2>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-          <Plus className="w-4 h-4" />
-          <span>Schedule Inspection</span>
-        </button>
+        <div className="flex items-center space-x-4">
+          <select className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="completed">Completed</option>
+            <option value="overdue">Overdue</option>
+          </select>
+          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
+            <Plus className="w-4 h-4" />
+            <span>Schedule Inspection</span>
+          </button>
+        </div>
       </div>
       
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Floor</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Scheduled Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Last Inspection</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {roomInspections.map((inspection) => (
-                <tr key={inspection.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{inspection.room}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{inspection.floor}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      inspection.status === 'scheduled' 
-                        ? 'bg-yellow-100 text-yellow-800' 
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {inspection.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{inspection.scheduledDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{inspection.lastInspection}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center space-x-2">
-                      <button className="text-amber-600 hover:text-amber-700">
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button className="text-blue-600 hover:text-blue-700">
-                        <Edit className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <UserCheck className="w-8 h-8 text-slate-400" />
         </div>
+        <p className="text-slate-500 font-medium">No room inspections</p>
+        <p className="text-sm text-slate-400 mt-1">Room inspection records will appear here</p>
       </div>
     </div>
   );
@@ -455,48 +299,129 @@ const WardenDashboard = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-slate-800">Emergency Contacts</h2>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-          <Plus className="w-4 h-4" />
-          <span>Add Contact</span>
-        </button>
+        <div className="flex items-center space-x-4">
+          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
+            <Plus className="w-4 h-4" />
+            <span>Add Contact</span>
+          </button>
+        </div>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {emergencyContacts.map((contact) => (
-          <div key={contact.id} className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-800">{contact.name}</h3>
-                <p className="text-slate-600">{contact.role}</p>
-              </div>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                {contact.availability}
-              </span>
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <AlertTriangle className="w-8 h-8 text-slate-400" />
+        </div>
+        <p className="text-slate-500 font-medium">No emergency contacts</p>
+        <p className="text-sm text-slate-400 mt-1">Emergency contact information will appear here</p>
+      </div>
+    </div>
+  );
+
+  const renderReports = () => (
+    <div className="space-y-6">
+      <h2 className="text-xl font-semibold text-slate-800">Reports & Analytics</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+              <Gavel className="w-5 h-5" />
             </div>
-            
-            <div className="space-y-3">
-              <div className="flex items-center space-x-3">
-                <Phone className="w-4 h-4 text-slate-400" />
-                <p className="text-slate-800">{contact.phone}</p>
-              </div>
-              <div className="flex items-center space-x-3">
-                <Mail className="w-4 h-4 text-slate-400" />
-                <p className="text-slate-800">{contact.email}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-2 mt-4 pt-4 border-t border-slate-200">
-              <button className="flex items-center space-x-2 px-3 py-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
-                <Phone className="w-4 h-4" />
-                <span>Call</span>
-              </button>
-              <button className="flex items-center space-x-2 px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                <Edit className="w-4 h-4" />
-                <span>Edit</span>
-              </button>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Disciplinary Report</h3>
+              <p className="text-sm text-slate-600">Case analysis & trends</p>
             </div>
           </div>
-        ))}
+          <button className="w-full mt-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors">
+            Generate Report
+          </button>
+        </div>
+        
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Inspection Report</h3>
+              <p className="text-sm text-slate-600">Room compliance status</p>
+            </div>
+          </div>
+          <button className="w-full mt-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors">
+            Generate Report
+          </button>
+        </div>
+        
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+              <Heart className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Welfare Report</h3>
+              <p className="text-sm text-slate-600">Student support tracking</p>
+            </div>
+          </div>
+          <button className="w-full mt-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors">
+            Generate Report
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSettings = () => (
+    <div className="space-y-6">
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <h2 className="text-xl font-semibold text-slate-800 mb-6">Warden Settings</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-slate-800">General Settings</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-700">Auto Notifications</span>
+                <button className="w-12 h-6 bg-amber-600 rounded-full relative">
+                  <div className="w-4 h-4 bg-white rounded-full absolute top-1 right-1"></div>
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-700">Emergency Alerts</span>
+                <button className="w-12 h-6 bg-amber-600 rounded-full relative">
+                  <div className="w-4 h-4 bg-white rounded-full absolute top-1 right-1"></div>
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-700">Inspection Reminders</span>
+                <button className="w-12 h-6 bg-amber-600 rounded-full relative">
+                  <div className="w-4 h-4 bg-white rounded-full absolute top-1 right-1"></div>
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-slate-800">Workflow Settings</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-700">Case Escalation</span>
+                <button className="w-12 h-6 bg-amber-600 rounded-full relative">
+                  <div className="w-4 h-4 bg-white rounded-full absolute top-1 right-1"></div>
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-700">Auto Follow-up</span>
+                <button className="w-12 h-6 bg-slate-300 rounded-full relative">
+                  <div className="w-4 h-4 bg-white rounded-full absolute top-1 left-1"></div>
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-700">Parent Notifications</span>
+                <button className="text-amber-600 hover:text-amber-700">Configure</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -506,93 +431,111 @@ const WardenDashboard = () => {
       case 'overview':
         return renderOverview();
       case 'disciplinary':
-        return renderDisciplinaryCases();
+        return renderDisciplinary();
       case 'welfare':
-        return renderWelfare();
+        return renderStudentWelfare();
       case 'inspections':
-        return renderInspections();
+        return renderRoomInspections();
       case 'emergency':
         return renderEmergencyContacts();
+      case 'reports':
+        return renderReports();
+      case 'settings':
+        return renderSettings();
       default:
         return renderOverview();
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
-      {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Link to="/" className="flex items-center space-x-3">
-              <Logo size="lg" animated={true} />
-            </Link>
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex">
+      {/* Sidebar Navigation */}
+      <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40">
+        {/* Logo */}
+        <div className="p-6 border-b border-amber-200/50">
+          <Link to="/" className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <Shield className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <span className="text-xl font-bold text-slate-900">HostelHaven</span>
+              <div className="text-xs text-slate-500">Warden Portal</div>
+            </div>
+          </Link>
+        </div>
 
-            <div className="flex items-center space-x-4">
-              <div className="hidden md:flex items-center space-x-2">
-                <div className="w-8 h-8 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-                <div className="text-sm">
-                  <p className="font-medium text-slate-900">{user.fullName}</p>
-                  <p className="text-slate-500">Warden</p>
-                </div>
-              </div>
-              
-              <button
-                onClick={handleLogout}
-                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:text-amber-700 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden md:block">Logout</span>
-              </button>
+        {/* User Profile */}
+        <div className="p-6 border-b border-amber-200/50">
+          <div className="flex items-center space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-purple-600 rounded-full flex items-center justify-center">
+              <Shield className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <p className="font-medium text-slate-900">{user.fullName}</p>
+              <p className="text-sm text-slate-500">Warden</p>
+              <p className="text-xs text-slate-400">{user.email}</p>
             </div>
           </div>
         </div>
-      </nav>
+
+        {/* Navigation Menu */}
+        <nav className="p-4">
+          <div className="space-y-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors text-left ${
+                  activeTab === tab.id
+                    ? 'bg-purple-600 text-white shadow-lg'
+                    : 'text-slate-600 hover:bg-purple-50 hover:text-purple-700'
+                }`}
+              >
+                <tab.icon className="w-5 h-5" />
+                <span className="font-medium">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        {/* Logout Button */}
+        <div className="absolute bottom-6 left-4 right-4">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center space-x-3 px-4 py-3 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="font-medium">Logout</span>
+          </button>
+        </div>
+      </div>
 
       {/* Main Content */}
-      <main className="pt-20 pb-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center space-x-4 mb-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <Shield className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-slate-800">Warden Dashboard</h1>
-                <p className="text-slate-600">Oversee hostel discipline and welfare</p>
-              </div>
+      <div className="flex-1 ml-64">
+        {/* Top Header */}
+        <header className="bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
+              <Shield className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-800">
+                {tabs.find(tab => tab.id === activeTab)?.label || 'Warden Dashboard'}
+              </h1>
+              <p className="text-slate-600">Manage student welfare and discipline</p>
             </div>
           </div>
+        </header>
 
-          {/* Tabs */}
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-2 mb-8">
-            <div className="flex space-x-1">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
-                    activeTab === tab.id
-                      ? 'bg-amber-600 text-white'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <tab.icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              ))}
-            </div>
+        {/* Content Area */}
+        <main className="p-6">
+          <div className="max-w-6xl mx-auto">
+            {renderContent()}
           </div>
-
-          {/* Content */}
-          {renderContent()}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 };
 
-export default WardenDashboard; 
+export default WardenDashboard;

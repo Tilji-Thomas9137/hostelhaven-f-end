@@ -41,6 +41,7 @@ const Login = () => {
     setError('');
 
     try {
+      // First check if the user exists and email is confirmed
       const { data: authData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
@@ -50,14 +51,26 @@ const Login = () => {
         // Handle specific error cases
         if (error.message.includes('Email not confirmed')) {
           setError('Please check your email and click the confirmation link before logging in.');
+        } else if (error.message.includes('Invalid login credentials')) {
+          setError('Invalid email or password. Please try again.');
+        } else if (error.message.includes('rate limit')) {
+          setError('Too many login attempts. Please try again later.');
         } else {
-          setError(error.message);
+          console.error('Login error:', error);
+          setError(error.message || 'An error occurred during login. Please try again.');
         }
-      } else {
-        // Use role-based redirection
-        await redirectToRoleBasedDashboard(authData, navigate);
+        return;
       }
+
+      if (!authData?.user) {
+        setError('No user data received. Please try again.');
+        return;
+      }
+
+      // Use role-based redirection with proper error handling
+      await redirectToRoleBasedDashboard(authData, navigate);
     } catch (error) {
+      console.error('Unexpected login error:', error);
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
@@ -66,18 +79,41 @@ const Login = () => {
 
   const handleGoogleSignIn = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      setIsLoading(true);
+      setError('');
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `http://localhost:5173/auth/callback`
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          skipBrowserRedirect: false
         }
       });
 
       if (error) {
-        setError(error.message);
+        console.error('Google OAuth error:', error);
+        if (error.message.includes('popup_closed_by_user')) {
+          setError('Sign in was cancelled. Please try again.');
+        } else if (error.message.includes('popup_blocked')) {
+          setError('Pop-up was blocked. Please allow pop-ups and try again.');
+        } else {
+          setError(error.message || 'Failed to sign in with Google. Please try again.');
+        }
+        return;
       }
+
+      // No need to handle redirect here as Supabase will do it automatically
+      // Just show loading state
+      setError(''); // Clear any previous errors
     } catch (error) {
-      setError('Google sign-in failed. Please try again.');
+      console.error('Google sign-in failed:', error);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 

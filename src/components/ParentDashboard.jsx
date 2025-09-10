@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { 
   Building2, 
   Users, 
@@ -232,57 +232,45 @@ const ParentDashboard = () => {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-              <GraduationCap className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-slate-800">GPA</h3>
-              <p className="text-2xl font-bold text-slate-900">{academicPerformance?.gpa || '3.8'}</p>
-              <p className="text-sm text-slate-600">Current semester</p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+              <GraduationCap className="w-5 h-5" />
             </div>
           </div>
+          <h3 className="text-lg font-semibold text-slate-800 mb-2">GPA</h3>
+          <p className="text-2xl font-bold text-slate-900">{academicPerformance?.gpa}</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
-              <Activity className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-slate-800">Attendance</h3>
-              <p className="text-2xl font-bold text-green-600">{academicPerformance?.attendance || '95'}%</p>
-              <p className="text-sm text-slate-600">Overall attendance</p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
+              <Activity className="w-5 h-5" />
             </div>
           </div>
+          <h3 className="text-lg font-semibold text-slate-800 mb-2">Attendance</h3>
+          <p className="text-2xl font-bold text-green-600">{academicPerformance?.attendance}%</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
-              <CreditCard className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-slate-800">Payment Status</h3>
-              <p className="text-2xl font-bold text-green-600">Up to Date</p>
-              <p className="text-sm text-slate-600">All payments current</p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+              <CreditCard className="w-5 h-5" />
             </div>
           </div>
+          <h3 className="text-lg font-semibold text-slate-800 mb-2">Payment Status</h3>
+          <p className="text-2xl font-bold text-slate-900">Up to Date</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
-              <Heart className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-slate-800">Health Status</h3>
-              <p className="text-2xl font-bold text-green-600">Excellent</p>
-              <p className="text-sm text-slate-600">Last checkup: Jan 20</p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
+              <Heart className="w-5 h-5" />
             </div>
           </div>
+          <h3 className="text-lg font-semibold text-slate-800 mb-2">Health Status</h3>
+          <p className="text-2xl font-bold text-green-600">Excellent</p>
         </div>
       </div>
 
@@ -506,92 +494,84 @@ const ParentDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex">
-      {/* Sidebar Navigation */}
-      <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40">
-        {/* Logo */}
-        <div className="p-6 border-b border-amber-200/50">
-          <Link to="/" className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg flex items-center justify-center">
-              <Heart className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <span className="text-xl font-bold text-slate-900">HostelHaven</span>
-              <div className="text-xs text-slate-500">Parent Portal</div>
-            </div>
-          </Link>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
+      {/* Navigation */}
+      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <Link to="/" className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg flex items-center justify-center">
+                <Building2 className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <span className="text-xl font-bold text-slate-900">HostelHaven</span>
+                <div className="text-xs text-slate-500">Parent Portal</div>
+              </div>
+            </Link>
 
-        {/* User Profile */}
-        <div className="p-6 border-b border-amber-200/50">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-orange-600 rounded-full flex items-center justify-center">
-              <Heart className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <p className="font-medium text-slate-900">{user.fullName}</p>
-              <p className="text-sm text-slate-500">Parent</p>
-              <p className="text-xs text-slate-400">{user.email}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Navigation Menu */}
-        <nav className="p-4">
-          <div className="space-y-2">
-            {tabs.map((tab) => (
+            <div className="flex items-center space-x-4">
+              <div className="hidden md:flex items-center space-x-2">
+                <div className="w-8 h-8 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-white" />
+                </div>
+                <div className="text-sm">
+                  <p className="font-medium text-slate-900">{user.fullName}</p>
+                  <p className="text-slate-500">Parent</p>
+                </div>
+              </div>
+              
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors text-left ${
-                  activeTab === tab.id
-                    ? 'bg-orange-600 text-white shadow-lg'
-                    : 'text-slate-600 hover:bg-orange-50 hover:text-orange-700'
-                }`}
+                onClick={handleLogout}
+                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:text-amber-700 transition-colors"
               >
-                <tab.icon className="w-5 h-5" />
-                <span className="font-medium">{tab.label}</span>
+                <LogOut className="w-4 h-4" />
+                <span className="hidden md:block">Logout</span>
               </button>
-            ))}
+            </div>
           </div>
-        </nav>
-
-        {/* Logout Button */}
-        <div className="absolute bottom-6 left-4 right-4">
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center space-x-3 px-4 py-3 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
-          >
-            <LogOut className="w-5 h-5" />
-            <span className="font-medium">Logout</span>
-          </button>
         </div>
-      </div>
+      </nav>
 
       {/* Main Content */}
-      <div className="flex-1 ml-64">
-        {/* Top Header */}
-        <header className="bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl flex items-center justify-center">
-              <Heart className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-slate-800">
-                {tabs.find(tab => tab.id === activeTab)?.label || 'Parent Dashboard'}
-              </h1>
-              <p className="text-slate-600">Monitor your child's hostel life</p>
+      <main className="pt-20 pb-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="flex items-center space-x-4 mb-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl flex items-center justify-center">
+                <Heart className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-slate-800">Parent Dashboard</h1>
+                <p className="text-slate-600">Monitor your child's hostel life</p>
+              </div>
             </div>
           </div>
-        </header>
 
-        {/* Content Area */}
-        <main className="p-6">
-          <div className="max-w-6xl mx-auto">
-            {renderContent()}
+          {/* Tabs */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-2 mb-8">
+            <div className="flex space-x-1">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
+                    activeTab === tab.id
+                      ? 'bg-amber-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </main>
-      </div>
+
+          {/* Content */}
+          {renderContent()}
+        </div>
+      </main>
     </div>
   );
 };

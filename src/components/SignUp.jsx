@@ -258,8 +258,8 @@ const SignUp = () => {
                       errors.role ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300'
                     }`}
                   >
+                    <option value="">Select a role</option>
                     <option value="student">Student</option>
-                    <option value="admin">Admin</option>
                     <option value="warden">Warden</option>
                     <option value="parent">Parent</option>
                     <option value="hostel_operations_assistant">Operations Assistant</option>

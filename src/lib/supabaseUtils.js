@@ -63,30 +63,54 @@ export const authUtils = {
  * @param {Object} session - Supabase session object
  * @param {Function} navigate - React Router navigate function
  */
-export const redirectToRoleBasedDashboard = async (session, navigate) => {
+export const redirectToRoleBasedDashboard = async (authData, navigate) => {
   try {
-    const response = await fetch('http://localhost:3002/api/auth/me', {
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (response.ok) {
-      const result = await response.json();
-      const userRole = result.data.user.role;
-      
-      // Navigate to the main dashboard - it will handle role-based routing
-      navigate('/dashboard');
-    } else {
-      // Fallback to session user data
-      const userRole = session.user.user_metadata?.role || 'student';
-      navigate('/dashboard');
+    if (!authData?.user) {
+      console.error('No user data available for redirection');
+      navigate('/login');
+      return;
     }
-  } catch (error) {
-    console.error('Error fetching user data for redirection:', error);
-    // Fallback to dashboard
+
+    // Get user profile from Supabase directly
+    const { data: userProfile, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', authData.user.email)
+      .single();
+
+    if (error) {
+      console.error('Error fetching user profile:', error);
+      navigate('/login');
+      return;
+    }
+
+    if (!userProfile) {
+      // Create user profile if it doesn't exist
+      const { data: newProfile, error: createError } = await supabase
+        .from('users')
+        .insert({
+          email: authData.user.email,
+          full_name: authData.user.user_metadata?.full_name || authData.user.email.split('@')[0],
+          phone: authData.user.user_metadata?.phone || null,
+          role: authData.user.user_metadata?.role || 'student'
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('Error creating user profile:', createError);
+        navigate('/login');
+        return;
+      }
+
+      userProfile = newProfile;
+    }
+
+    // Navigate to the dashboard
     navigate('/dashboard');
+  } catch (error) {
+    console.error('Error in role-based redirection:', error);
+    navigate('/login');
   }
 };
 

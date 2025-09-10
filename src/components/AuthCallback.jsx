@@ -10,66 +10,171 @@ const AuthCallback = () => {
   const [status, setStatus] = useState('loading'); // loading, success, error
   const [message, setMessage] = useState('');
 
+  const createUserProfile = async (session) => {
+    try {
+      if (!session?.user?.id) {
+        throw new Error('No user session available');
+      }
+
+      console.log('Checking/creating profile for user:', session.user.id);
+
+      // First check if profile already exists
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      if (fetchError && !fetchError.message.includes('No rows found')) {
+        console.error('Error fetching profile:', fetchError);
+        throw fetchError;
+      }
+
+      if (existingProfile) {
+        console.log('Existing profile found:', existingProfile);
+        return existingProfile;
+      }
+
+      // Get user metadata from session
+      const metadata = session.user.user_metadata || {};
+      
+      // Extract name from metadata or email
+      const fullName = metadata.full_name || 
+                      metadata.name || 
+                      session.user.email.split('@')[0];
+
+      const newProfile = {
+        id: session.user.id,
+        email: session.user.email,
+        full_name: fullName,
+        role: 'student',
+        avatar_url: metadata.avatar_url || metadata.picture || null,
+        phone: metadata.phone || null
+      };
+
+      console.log('Creating new profile:', newProfile);
+
+      // Insert new profile
+      const { data: profile, error: insertError } = await supabase
+        .from('users')
+        .insert([newProfile])
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('Error inserting profile:', insertError);
+        throw insertError;
+      }
+
+      if (!profile) {
+        throw new Error('Profile creation failed - no data returned');
+      }
+
+      console.log('Profile created successfully:', profile);
+      return profile;
+    } catch (error) {
+      console.error('Error in createUserProfile:', error);
+      throw error;
+    }
+  };
+
+  const handleSuccessfulAuth = async (session) => {
+    try {
+      if (!session?.user) {
+        throw new Error('Invalid session data');
+      }
+
+      setStatus('loading');
+      setMessage('Setting up your profile...');
+
+      console.log('Processing authentication for:', session.user.email);
+
+      // Create or get user profile
+      const userProfile = await createUserProfile(session);
+
+      if (!userProfile) {
+        throw new Error('Failed to create or retrieve user profile');
+      }
+
+      setStatus('success');
+      setMessage('Authentication successful! Redirecting to dashboard...');
+
+      // Short delay to show success message
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 1500);
+    } catch (error) {
+      console.error('Profile handling error:', error);
+      
+      // Determine appropriate error message
+      let errorMessage = 'An error occurred while setting up your profile. Please try again.';
+      
+      if (error.message === 'Invalid session data') {
+        errorMessage = 'Authentication failed. Please try logging in again.';
+      } else if (error.message.includes('duplicate key')) {
+        errorMessage = 'This account already exists. Please try logging in instead.';
+      } else if (error.message.includes('permission denied')) {
+        errorMessage = 'Access denied. Please check your account permissions.';
+      }
+
+      setStatus('error');
+      setMessage(errorMessage);
+      
+      // Redirect back to login after showing error
+      setTimeout(() => navigate('/login'), 3000);
+    }
+  };
+
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        // Get the current session first
+        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
         
-        if (error) {
-          setStatus('error');
-          setMessage('Authentication failed. Please try again.');
-          setTimeout(() => navigate('/login'), 3000);
+        if (sessionError) {
+          console.error('Session error:', sessionError);
+          throw new Error('Failed to get session');
+        }
+
+        if (currentSession) {
+          console.log('Session found, proceeding with authentication...');
+          await handleSuccessfulAuth(currentSession);
           return;
         }
 
-        if (data.session) {
-          // Create user profile by calling the backend API
-          try {
-            const response = await fetch('http://localhost:3002/api/auth/me', {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${data.session.access_token}`,
-                'Content-Type': 'application/json'
-              }
-            });
-
-            if (response.ok) {
-              const result = await response.json();
-              console.log('User profile created/retrieved:', result);
-              
-              // Use role-based redirection
-              setStatus('success');
-              setMessage('Authentication successful! Redirecting to dashboard...');
-              setTimeout(() => redirectToRoleBasedDashboard(data.session, navigate), 2000);
-            } else {
-              console.error('Failed to create user profile:', response.statusText);
-              // Still redirect to dashboard even if profile creation fails
-              setStatus('success');
-              setMessage('Authentication successful! Redirecting to dashboard...');
-              setTimeout(() => redirectToRoleBasedDashboard(data.session, navigate), 2000);
-            }
-          } catch (profileError) {
-            console.error('Profile handling error:', profileError);
-            // Still redirect to dashboard even if profile handling fails
-            setStatus('success');
-            setMessage('Authentication successful! Redirecting to dashboard...');
-            setTimeout(() => redirectToRoleBasedDashboard(data.session, navigate), 2000);
-          }
-        } else {
-          setStatus('error');
-          setMessage('No session found. Please try again.');
-          setTimeout(() => navigate('/login'), 3000);
+        // If no session, check for OAuth callback parameters
+        const error = searchParams.get('error');
+        const errorDescription = searchParams.get('error_description');
+        
+        if (error || errorDescription) {
+          console.error('OAuth error:', { error, errorDescription });
+          throw new Error(errorDescription || error || 'Authentication failed');
         }
+
+        // Handle OAuth callback
+        const { data: authData, error: authError } = await supabase.auth.getSession();
+        
+        if (authError) {
+          console.error('Auth error:', authError);
+          throw new Error('Failed to authenticate');
+        }
+
+        if (!authData?.session) {
+          throw new Error('No session data received');
+        }
+
+        await handleSuccessfulAuth(authData.session);
       } catch (error) {
         console.error('Auth callback error:', error);
         setStatus('error');
-        setMessage('An unexpected error occurred. Please try again.');
+        setMessage(error.message || 'Authentication failed. Please try again.');
+        // Add a button to retry
         setTimeout(() => navigate('/login'), 3000);
       }
     };
 
     handleAuthCallback();
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
@@ -124,4 +229,4 @@ const AuthCallback = () => {
   );
 };
 
-export default AuthCallback; 
+export default AuthCallback;

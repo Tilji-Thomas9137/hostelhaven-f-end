@@ -1,4 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { useNotification } from '../../contexts/NotificationContext';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { roomSchema } from '../../lib/validation';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
@@ -31,18 +35,33 @@ import {
   Database,
   Cog,
   Eye,
-  Trash2
+  Trash2,
+  UserCheck
 } from 'lucide-react';
-import Logo from '../Logo';
+import RoomAllocation from './RoomAllocation';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const { showNotification } = useNotification();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
-  const [hostels, setHostels] = useState([]);
+  const [dashboardStats, setDashboardStats] = useState({});
   const [students, setStudents] = useState([]);
-  const [analytics, setAnalytics] = useState({});
+  const [rooms, setRooms] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
+  const [showRoomModal, setShowRoomModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Filters
+  const [studentsSearch, setStudentsSearch] = useState('');
+  const [paymentsStatusFilter, setPaymentsStatusFilter] = useState('');
+  const [adminComplaintStatusFilter, setAdminComplaintStatusFilter] = useState('');
+  const [roomsSearch, setRoomsSearch] = useState('');
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState('');
+  const [leaveSearch, setLeaveSearch] = useState('');
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -54,6 +73,7 @@ const AdminDashboard = () => {
           return;
         }
 
+        // Fetch user profile
         const response = await fetch('http://localhost:3002/api/auth/me', {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
@@ -64,7 +84,34 @@ const AdminDashboard = () => {
         if (response.ok) {
           const result = await response.json();
           setUser(result.data.user);
-          fetchMockData();
+          
+          // Check if user is admin - if not, show error but don't redirect immediately
+          if (result.data.user.role !== 'admin') {
+            console.warn('User is not admin, role:', result.data.user.role);
+            // Still set the user but show appropriate message in UI
+            setUser({...result.data.user, isNotAdmin: true});
+          } else {
+            // Fetch admin data only if user is admin
+            fetchDashboardStats();
+            fetchStudents();
+            fetchRooms();
+            fetchComplaints();
+            fetchPayments();
+            fetchLeaveRequests();
+            fetchAnalytics();
+          }
+        } else {
+          console.error('Failed to fetch user profile:', response.status);
+          // Try to get user info from session as fallback
+          const { data: { user: sessionUser } } = await supabase.auth.getUser();
+          if (sessionUser) {
+            setUser({
+              id: sessionUser.id,
+              fullName: sessionUser.user_metadata?.full_name || sessionUser.email,
+              email: sessionUser.email,
+              role: sessionUser.user_metadata?.role || 'student'
+            });
+          }
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -76,62 +123,204 @@ const AdminDashboard = () => {
     fetchUserData();
   }, [navigate]);
 
-  const fetchMockData = () => {
-    // Mock hostels data
-    setHostels([
-      {
-        id: '1',
-        name: 'University Heights Hostel',
-        address: '123 University Ave',
-        city: 'New York',
-        capacity: 500,
-        occupancy: 450,
-        occupancyRate: 90,
-        revenue: 540000
-      },
-      {
-        id: '2',
-        name: 'Campus View Hostel',
-        address: '456 College Blvd',
-        city: 'Los Angeles',
-        capacity: 300,
-        occupancy: 285,
-        occupancyRate: 95,
-        revenue: 342000
-      }
-    ]);
+  const fetchDashboardStats = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
 
-    // Mock students data
-    setStudents([
-      {
-        id: '1',
-        name: 'John Student',
-        email: 'john@example.com',
-        room: '101',
-        hostel: 'University Heights',
-        status: 'active',
-        paymentStatus: 'paid'
-      },
-      {
-        id: '2',
-        name: 'Jane Doe',
-        email: 'jane@example.com',
-        room: '102',
-        hostel: 'University Heights',
-        status: 'active',
-        paymentStatus: 'pending'
-      }
-    ]);
+      const response = await fetch('http://localhost:3002/api/admin/dashboard-stats', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-    // Mock analytics
-    setAnalytics({
-      totalStudents: 1234,
-      totalRevenue: 882000,
-      occupancyRate: 92.5,
-      pendingIssues: 12,
-      monthlyGrowth: 8.5
-    });
+      if (response.ok) {
+        const result = await response.json();
+        setDashboardStats(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+    }
   };
+
+  const fetchRooms = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // For now, we'll use a simple query to get rooms data
+      // In a real single-hostel system, you'd have an admin rooms endpoint
+      const { data: roomsData, error } = await supabase
+        .from('rooms')
+        .select(`
+          *,
+          users(full_name, email)
+        `)
+        .order('room_number');
+
+      if (!error && roomsData) {
+        setRooms(roomsData);
+      }
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+    }
+  };
+
+  const fetchPayments = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const params = new URLSearchParams();
+      params.set('limit', '50');
+      if (paymentsStatusFilter) params.set('status', paymentsStatusFilter);
+
+      const response = await fetch(`http://localhost:3002/api/admin/payments?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setPayments(result.data.payments || []);
+      }
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+    }
+  };
+
+  const fetchAnalytics = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('http://localhost:3002/api/admin/analytics', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setAnalytics(result.data.analytics || {});
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    }
+  };
+
+  const fetchStudents = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const params = new URLSearchParams();
+      params.set('limit', '20');
+      if (studentsSearch.trim()) params.set('search', studentsSearch.trim());
+
+      const response = await fetch(`http://localhost:3002/api/admin/students?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setStudents(result.data.students);
+      }
+    } catch (error) {
+      console.error('Error fetching students:', error);
+    }
+  };
+
+  const fetchComplaints = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const params = new URLSearchParams();
+      params.set('limit', '20');
+      if (adminComplaintStatusFilter) params.set('status', adminComplaintStatusFilter);
+
+      const response = await fetch(`http://localhost:3002/api/admin/complaints?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setComplaints(result.data.complaints);
+      }
+    } catch (error) {
+      console.error('Error fetching complaints:', error);
+    }
+  };
+
+  const fetchLeaveRequests = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const params = new URLSearchParams();
+      params.set('limit', '20');
+      if (leaveStatusFilter) params.set('status', leaveStatusFilter);
+
+      const response = await fetch(`http://localhost:3002/api/admin/leave-requests?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setLeaveRequests(result.data.leaveRequests || []);
+      }
+    } catch (error) {
+      console.error('Error fetching leave requests:', error);
+    }
+  };
+
+  // Admin filters/watchers
+  useEffect(() => {
+    // Debounce student search
+    const id = setTimeout(() => {
+      fetchStudents();
+    }, 400);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentsSearch]);
+
+  useEffect(() => {
+    fetchPayments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentsStatusFilter]);
+
+  useEffect(() => {
+    fetchComplaints();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminComplaintStatusFilter]);
+
+  useEffect(() => {
+    fetchLeaveRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaveStatusFilter]);
+
+  // Debounce leave search to avoid excessive renders when we add server search later
+  useEffect(() => {
+    const id = setTimeout(() => {
+      // Currently client-side filtering; keep effect for future server search
+      // No-op
+    }, 300);
+    return () => clearTimeout(id);
+  }, [leaveSearch]);
 
   const handleLogout = async () => {
     try {
@@ -147,12 +336,76 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleCreateRoom = async (formData) => {
+    setIsSubmitting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // Create room in the database
+      const { data: room, error } = await supabase
+        .from('rooms')
+        .insert({
+          room_number: formData.room_number,
+          floor: parseInt(formData.floor),
+          room_type: formData.room_type,
+          capacity: parseInt(formData.capacity),
+          price: parseFloat(formData.price),
+          status: 'available'
+        })
+        .select()
+        .single();
+
+      if (!error) {
+        setShowRoomModal(false);
+        fetchRooms(); // Refresh rooms list
+        fetchDashboardStats(); // Refresh stats
+        showNotification('Room created successfully!', 'success');
+      } else {
+        showNotification('Failed to create room: ' + error.message, 'error');
+      }
+    } catch (error) {
+      console.error('Error creating room:', error);
+      showNotification('Failed to create room', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateComplaintStatus = async (complaintId, status, notes = '') => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`http://localhost:3002/api/admin/complaints/${complaintId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status, resolution_notes: notes })
+      });
+
+      if (response.ok) {
+        fetchComplaints(); // Refresh complaints list
+        fetchDashboardStats(); // Refresh stats
+        alert('Complaint status updated successfully!');
+      } else {
+        const error = await response.json();
+        alert(error.message || 'Failed to update complaint');
+      }
+    } catch (error) {
+      console.error('Error updating complaint:', error);
+      alert('Failed to update complaint');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto mb-4"></div>
-          <p className="text-slate-600">Loading dashboard...</p>
+          <p className="text-slate-600">Loading admin dashboard...</p>
         </div>
       </div>
     );
@@ -163,174 +416,195 @@ const AdminDashboard = () => {
     return null;
   }
 
+  // Show access denied message if user is not admin
+  if (user.isNotAdmin || (user.role && user.role !== 'admin')) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
+        <div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md mx-4">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Access Denied</h2>
+          <p className="text-slate-600 mb-4">
+            You need administrator privileges to access this dashboard.
+          </p>
+          <p className="text-sm text-slate-500 mb-6">
+            Current role: <span className="font-medium">{user.role || 'student'}</span>
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+            >
+              Go to My Dashboard
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
-    { id: 'hostels', label: 'Hostels', icon: Building2 },
     { id: 'students', label: 'Students', icon: Users },
+    { id: 'rooms', label: 'Rooms', icon: Building2 },
+    { id: 'room-allocations', label: 'Room Allocations', icon: UserCheck },
+    { id: 'complaints', label: 'Complaints', icon: AlertCircle },
+    { id: 'leave', label: 'Leave Requests', icon: Calendar },
+    { id: 'payments', label: 'Payments', icon: CreditCard },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
   const renderOverview = () => (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-              <Users className="w-5 h-5" />
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Total Students</h3>
+              <p className="text-2xl font-bold text-slate-900">{dashboardStats.totalStudents?.toLocaleString() || 0}</p>
+              <p className="text-sm text-slate-600">Registered users</p>
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Total Students</h3>
-          <p className="text-2xl font-bold text-slate-900">{analytics.totalStudents?.toLocaleString()}</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
-              <Home className="w-5 h-5" />
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Total Rooms</h3>
+              <p className="text-2xl font-bold text-slate-900">{rooms.length || 0}</p>
+              <p className="text-sm text-slate-600">Available rooms</p>
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Occupancy Rate</h3>
-          <p className="text-2xl font-bold text-green-600">{analytics.occupancyRate}%</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
-              <DollarSign className="w-5 h-5" />
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+              <DollarSign className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Total Revenue</h3>
+              <p className="text-2xl font-bold text-slate-900">${dashboardStats.totalRevenue?.toLocaleString() || 0}</p>
+              <p className="text-sm text-slate-600">All time earnings</p>
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Revenue</h3>
-          <p className="text-2xl font-bold text-slate-900">${analytics.totalRevenue?.toLocaleString()}</p>
         </div>
         
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-red-100 text-red-600 rounded-xl flex items-center justify-center">
-              <AlertCircle className="w-5 h-5" />
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-xl flex items-center justify-center">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Pending Issues</h3>
+              <p className="text-2xl font-bold text-slate-900">{dashboardStats.pendingComplaints || 0}</p>
+              <p className="text-sm text-slate-600">Need attention</p>
             </div>
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Pending Issues</h3>
-          <p className="text-2xl font-bold text-slate-900">{analytics.pendingIssues}</p>
         </div>
       </div>
 
-      {/* Hostels Overview */}
+      {/* Occupancy Overview */}
       <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-slate-800">Hostels Overview</h2>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-            <Plus className="w-4 h-4" />
-            <span>Add Hostel</span>
-          </button>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {hostels.map((hostel) => (
-            <div key={hostel.id} className="border border-slate-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-slate-800">{hostel.name}</h3>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  Active
-                </span>
-              </div>
-              
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3">
-                  <MapPin className="w-4 h-4 text-slate-400" />
-                  <p className="text-slate-600">{hostel.address}, {hostel.city}</p>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-slate-500">Capacity</p>
-                    <p className="font-semibold text-slate-800">{hostel.capacity}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-500">Occupancy</p>
-                    <p className="font-semibold text-slate-800">{hostel.occupancy}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-500">Rate</p>
-                    <p className="font-semibold text-green-600">{hostel.occupancyRate}%</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-500">Revenue</p>
-                    <p className="font-semibold text-slate-800">${hostel.revenue.toLocaleString()}</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-2 pt-3">
-                  <button className="flex items-center space-x-1 px-3 py-1 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
-                    <Eye className="w-4 h-4" />
-                    <span className="text-sm">View</span>
-                  </button>
-                  <button className="flex items-center space-x-1 px-3 py-1 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                    <Edit className="w-4 h-4" />
-                    <span className="text-sm">Edit</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+        <h2 className="text-xl font-semibold text-slate-800 mb-6">Occupancy Overview</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="text-center">
+            <div className="text-3xl font-bold text-blue-600 mb-2">{dashboardStats.totalCapacity || 0}</div>
+            <div className="text-slate-600">Total Capacity</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-green-600 mb-2">{dashboardStats.totalOccupancy || 0}</div>
+            <div className="text-slate-600">Current Occupancy</div>
+          </div>
+          <div className="text-center">
+            <div className="text-3xl font-bold text-purple-600 mb-2">{dashboardStats.occupancyRate || 0}%</div>
+            <div className="text-slate-600">Occupancy Rate</div>
+          </div>
         </div>
       </div>
 
       {/* Recent Activity */}
       <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-4">Recent Activity</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-slate-800">Recent Activity</h2>
+          <div className="text-sm text-slate-500">Last 24 hours</div>
+        </div>
+        
         <div className="space-y-4">
-          <div className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl">
-            <div className="w-8 h-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
-              <Users className="w-4 h-4" />
+          {complaints.slice(0, 5).map((complaint) => (
+            <div key={complaint.id} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                complaint.priority === 'urgent' ? 'bg-red-100 text-red-600' :
+                complaint.priority === 'high' ? 'bg-orange-100 text-orange-600' :
+                'bg-yellow-100 text-yellow-600'
+              }`}>
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-slate-800">{complaint.title}</p>
+                <p className="text-sm text-slate-600">
+                  By {complaint.users?.full_name} • {complaint.priority} priority
+                </p>
+              </div>
+              <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                complaint.status === 'resolved' ? 'bg-green-100 text-green-700' : 
+                complaint.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                {complaint.status.replace('_', ' ')}
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="font-medium text-slate-800">New student registered</p>
-              <p className="text-sm text-slate-600">2 minutes ago</p>
-            </div>
-          </div>
+          ))}
           
-          <div className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl">
-            <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
-              <CreditCard className="w-4 h-4" />
+          {complaints.length === 0 && (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Activity className="w-8 h-8 text-slate-400" />
+              </div>
+              <p className="text-slate-500 font-medium">No recent activity</p>
+              <p className="text-sm text-slate-400 mt-1">Recent system activities will appear here</p>
             </div>
-            <div className="flex-1">
-              <p className="font-medium text-slate-800">Payment received</p>
-              <p className="text-sm text-slate-600">15 minutes ago</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl">
-            <div className="w-8 h-8 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center">
-              <AlertCircle className="w-4 h-4" />
-            </div>
-            <div className="flex-1">
-              <p className="font-medium text-slate-800">New complaint submitted</p>
-              <p className="text-sm text-slate-600">1 hour ago</p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
   );
 
-  const renderHostels = () => (
+  const renderRooms = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800">Hostel Management</h2>
+        <h2 className="text-xl font-semibold text-slate-800">Room Management</h2>
         <div className="flex items-center space-x-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search hostels..."
+              placeholder="Search rooms..."
+              value={roomsSearch}
+              onChange={(e) => setRoomsSearch(e.target.value)}
               className="pl-10 pr-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
             />
           </div>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
+          <button 
+            onClick={() => setShowRoomModal(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
+          >
             <Plus className="w-4 h-4" />
-            <span>Add Hostel</span>
+            <span>Add Room</span>
           </button>
         </div>
       </div>
@@ -340,36 +614,48 @@ const AdminDashboard = () => {
           <table className="w-full">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Location</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Floor</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Capacity</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Occupancy</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Revenue</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Price</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {hostels.map((hostel) => (
-                <tr key={hostel.id} className="hover:bg-slate-50">
+              {rooms
+                .filter((room) =>
+                  roomsSearch.trim() === '' ||
+                  String(room.room_number).toLowerCase().includes(roomsSearch.toLowerCase()) ||
+                  String(room.floor).toLowerCase().includes(roomsSearch.toLowerCase()) ||
+                  (room.room_type || '').toLowerCase().includes(roomsSearch.toLowerCase())
+                )
+                .map((room) => (
+                <tr key={room.id} className="hover:bg-slate-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
-                      <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-lg flex items-center justify-center mr-3">
+                      <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mr-3">
                         <Building2 className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-slate-900">{hostel.name}</p>
-                        <p className="text-sm text-slate-500">{hostel.address}</p>
+                        <p className="text-sm font-medium text-slate-900">{room.room_number}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{hostel.city}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{hostel.capacity}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{hostel.occupancy}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">${hostel.revenue.toLocaleString()}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.floor}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.room_type}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.capacity}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.occupied || 0}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">${room.price}</td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      Active
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      room.status === 'available' ? 'bg-green-100 text-green-800' : 
+                      room.status === 'occupied' ? 'bg-blue-100 text-blue-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {room.status}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -380,8 +666,248 @@ const AdminDashboard = () => {
                       <button className="text-blue-600 hover:text-blue-700">
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button className="text-red-600 hover:text-red-700">
-                        <Trash2 className="w-4 h-4" />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPayments = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-800">Payment Management</h2>
+        <div className="flex items-center space-x-4">
+          <select
+            value={paymentsStatusFilter}
+            onChange={(e) => setPaymentsStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500">
+            <option value="">All Status</option>
+            <option value="paid">Paid</option>
+            <option value="pending">Pending</option>
+            <option value="failed">Failed</option>
+            <option value="refunded">Refunded</option>
+          </select>
+          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
+            <Download className="w-4 h-4" />
+            <span>Export</span>
+          </button>
+        </div>
+      </div>
+      
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Amount</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Due Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Paid Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {payments.map((payment) => (
+                <tr key={payment.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center mr-3">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{payment.user?.full_name || 'N/A'}</p>
+                        <p className="text-sm text-slate-500">{payment.month_year}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">${payment.amount}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{payment.due_date}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      payment.status === 'paid' ? 'bg-green-100 text-green-800' : 
+                      payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {payment.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{payment.paid_date || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      <button className="text-amber-600 hover:text-amber-700">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      {payment.status === 'pending' && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const { data: { session } } = await supabase.auth.getSession();
+                              if (!session) return;
+                              const res = await fetch(`http://localhost:3002/api/admin/payments/${payment.id}/mark-paid`, {
+                                method: 'PUT',
+                                headers: {
+                                  'Authorization': `Bearer ${session.access_token}`,
+                                  'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ payment_method: 'card' })
+                              });
+                              if (res.ok) {
+                                fetchPayments();
+                                fetchDashboardStats();
+                                alert('Payment marked as paid');
+                              } else {
+                                const err = await res.json();
+                                alert(err.message || 'Failed to mark as paid');
+                              }
+                            } catch (e) {
+                              console.error(e);
+                              alert('Failed to mark as paid');
+                            }
+                          }}
+                          className="text-green-600 hover:text-green-700"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  const handleUpdateLeaveStatus = async (requestId, status, notes = '') => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`http://localhost:3002/api/admin/leave-requests/${requestId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status, notes })
+      });
+
+      if (response.ok) {
+        fetchLeaveRequests();
+        alert(`Leave request ${status}`);
+      } else {
+        const err = await response.json();
+        alert(err.message || 'Failed to update leave request');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Failed to update leave request');
+    }
+  };
+
+  const renderLeaveRequests = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-800">Leave Requests</h2>
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by reason or student..."
+              value={leaveSearch}
+              onChange={(e) => setLeaveSearch(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            />
+          </div>
+          <select
+            value={leaveStatusFilter}
+            onChange={(e) => setLeaveStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+          >
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Reason</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">From</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">To</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {leaveRequests
+                .filter((r) => {
+                  const q = leaveSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  const student = r.users?.full_name?.toLowerCase() || '';
+                  const email = r.users?.email?.toLowerCase() || '';
+                  return r.reason.toLowerCase().includes(q) || student.includes(q) || email.includes(q);
+                })
+                .map((request) => (
+                <tr key={request.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mr-3">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{request.users?.full_name || 'N/A'}</p>
+                        <p className="text-sm text-slate-500">{request.users?.email || ''}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{request.reason}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{request.start_date}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{request.end_date}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      request.status === 'approved' ? 'bg-green-100 text-green-800' : 
+                      request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {request.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      {request.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => handleUpdateLeaveStatus(request.id, 'approved')}
+                            className="text-green-600 hover:text-green-700"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleUpdateLeaveStatus(request.id, 'rejected')}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      <button className="text-amber-600 hover:text-amber-700">
+                        <Eye className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -397,20 +923,73 @@ const AdminDashboard = () => {
   const renderStudents = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800">Student Management</h2>
+        <h2 className="text-xl font-semibold text-slate-800">User & Room Management</h2>
         <div className="flex items-center space-x-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search students..."
+              placeholder="Search users..."
+              value={studentsSearch}
+              onChange={(e) => setStudentsSearch(e.target.value)}
               className="pl-10 pr-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
             />
           </div>
           <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-            <Plus className="w-4 h-4" />
-            <span>Add Student</span>
+            <Download className="w-4 h-4" />
+            <span>Export</span>
           </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Users className="w-6 h-6 text-blue-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Users</p>
+              <p className="text-2xl font-bold text-gray-900">{students.length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <UserCheck className="w-6 h-6 text-green-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Students</p>
+              <p className="text-2xl font-bold text-gray-900">{students.filter(s => s.role === 'student').length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="flex items-center">
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <Building2 className="w-6 h-6 text-purple-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Rooms</p>
+              <p className="text-2xl font-bold text-gray-900">{rooms.length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow">
+          <div className="flex items-center">
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Home className="w-6 h-6 text-orange-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Available Rooms</p>
+              <p className="text-2xl font-bold text-gray-900">{rooms.filter(r => r.status === 'available').length}</p>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -419,11 +998,11 @@ const AdminDashboard = () => {
           <table className="w-full">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">User</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room Details</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Hostel</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Payment</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -432,41 +1011,69 @@ const AdminDashboard = () => {
                 <tr key={student.id} className="hover:bg-slate-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
-                      <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mr-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${
+                        student.role === 'admin' ? 'bg-red-100 text-red-600' :
+                        student.role === 'student' ? 'bg-blue-100 text-blue-600' :
+                        student.role === 'warden' ? 'bg-green-100 text-green-600' :
+                        student.role === 'parent' ? 'bg-purple-100 text-purple-600' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
                         <User className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-slate-900">{student.name}</p>
+                        <p className="text-sm font-medium text-slate-900">{student.full_name}</p>
                         <p className="text-sm text-slate-500">{student.email}</p>
+                        {student.phone && (
+                          <p className="text-xs text-slate-400">{student.phone}</p>
+                        )}
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{student.room}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{student.hostel}</td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      {student.status}
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      student.role === 'admin' ? 'bg-red-100 text-red-800' :
+                      student.role === 'student' ? 'bg-blue-100 text-blue-800' :
+                      student.role === 'warden' ? 'bg-green-100 text-green-800' :
+                      student.role === 'parent' ? 'bg-purple-100 text-purple-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {student.role?.replace('_', ' ').toUpperCase()}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      student.paymentStatus === 'paid' 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {student.paymentStatus}
-                    </span>
+                    {student.roomNumber && student.roomNumber !== 'Not Assigned' ? (
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">Room {student.roomNumber}</p>
+                        <p className="text-sm text-slate-500">Floor {student.rooms?.floor || 'N/A'}</p>
+                        <p className="text-xs text-slate-400">{student.rooms?.room_type || 'Standard'}</p>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-slate-400 italic">No room assigned</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    {student.hostelName && student.hostelName !== 'Not Assigned' ? student.hostelName : 'Not assigned'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {student.role === 'student' ? (
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        student.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 
+                        student.paymentStatus === 'overdue' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {student.paymentStatus}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-slate-400">N/A</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
-                      <button className="text-amber-600 hover:text-amber-700">
+                      <button className="text-amber-600 hover:text-amber-700" title="View Details">
                         <Eye className="w-4 h-4" />
                       </button>
-                      <button className="text-blue-600 hover:text-blue-700">
+                      <button className="text-blue-600 hover:text-blue-700" title="Edit User">
                         <Edit className="w-4 h-4" />
-                      </button>
-                      <button className="text-red-600 hover:text-red-700">
-                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -479,62 +1086,271 @@ const AdminDashboard = () => {
     </div>
   );
 
-  const renderAnalytics = () => (
+  const renderComplaints = () => (
     <div className="space-y-6">
-      {/* Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-          </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Monthly Growth</h3>
-          <p className="text-2xl font-bold text-green-600">+{analytics.monthlyGrowth}%</p>
-          <p className="text-sm text-slate-600 mt-2">vs last month</p>
-        </div>
-        
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
-              <Activity className="w-5 h-5" />
-            </div>
-          </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Active Students</h3>
-          <p className="text-2xl font-bold text-slate-900">{Math.floor(analytics.totalStudents * 0.95)}</p>
-          <p className="text-sm text-slate-600 mt-2">95% of total</p>
-        </div>
-        
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-          </div>
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">Revenue Growth</h3>
-          <p className="text-2xl font-bold text-purple-600">+12.5%</p>
-          <p className="text-sm text-slate-600 mt-2">vs last month</p>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-800">Complaint Management</h2>
+        <div className="flex items-center space-x-4">
+          <select
+            value={adminComplaintStatusFilter}
+            onChange={(e) => setAdminComplaintStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+          </select>
         </div>
       </div>
-
-      {/* Charts Placeholder */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4">Occupancy Trends</h3>
-          <div className="h-64 bg-slate-100 rounded-xl flex items-center justify-center">
-            <p className="text-slate-500">Chart placeholder</p>
+      
+      <div className="space-y-4">
+        {complaints.map((complaint) => (
+          <div key={complaint.id} className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center space-x-3 mb-2">
+                  <h3 className="text-lg font-semibold text-slate-800">{complaint.title}</h3>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    complaint.priority === 'urgent' ? 'bg-red-100 text-red-800' :
+                    complaint.priority === 'high' ? 'bg-orange-100 text-orange-800' :
+                    complaint.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {complaint.priority}
+                  </span>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    complaint.status === 'resolved' ? 'bg-green-100 text-green-800' : 
+                    complaint.status === 'in_progress' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {complaint.status.replace('_', ' ')}
+                  </span>
+                </div>
+                <p className="text-slate-600 mb-3">{complaint.description}</p>
+                <div className="flex items-center space-x-4 text-sm text-slate-500">
+                  <span>By: {complaint.users?.full_name}</span>
+                  <span>Room: {complaint.rooms?.room_number || 'N/A'}</span>
+                  <span>Created: {new Date(complaint.created_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {complaint.status === 'pending' && (
+                  <button 
+                    onClick={() => handleUpdateComplaintStatus(complaint.id, 'in_progress')}
+                    className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  >
+                    Start
+                  </button>
+                )}
+                {complaint.status === 'in_progress' && (
+                  <button 
+                    onClick={() => handleUpdateComplaintStatus(complaint.id, 'resolved', 'Issue resolved by admin')}
+                    className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  >
+                    Resolve
+                  </button>
+                )}
+                <button className="flex items-center space-x-1 px-3 py-1 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors">
+                  <Eye className="w-4 h-4" />
+                  <span className="text-sm">View</span>
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-        
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <h3 className="text-lg font-semibold text-slate-800 mb-4">Revenue Analysis</h3>
-          <div className="h-64 bg-slate-100 rounded-xl flex items-center justify-center">
-            <p className="text-slate-500">Chart placeholder</p>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );
+
+  const renderAnalytics = () => {
+    // Helpers to aggregate analytics data
+    const monthKey = (d) => {
+      const date = new Date(d);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    };
+    const lastNMonths = (n) => {
+      const arr = [];
+      const now = new Date();
+      for (let i = n - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        arr.push({
+          key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+          label: d.toLocaleString('en-US', { month: 'short' })
+        });
+      }
+      return arr;
+    };
+
+    const months = lastNMonths(6);
+    const registrationsByMonth = (() => {
+      const counts = Object.fromEntries(months.map(m => [m.key, 0]));
+      (analytics?.monthlyRegistrations || []).forEach(({ created_at }) => {
+        const k = monthKey(created_at);
+        if (k in counts) counts[k] += 1;
+      });
+      return months.map(m => ({ label: m.label, value: counts[m.key] }));
+    })();
+
+    const revenueByMonth = (() => {
+      const sums = Object.fromEntries(months.map(m => [m.key, 0]));
+      (analytics?.monthlyRevenue || []).forEach(({ paid_date, amount }) => {
+        const k = monthKey(paid_date);
+        if (k in sums) sums[k] += Number(amount || 0);
+      });
+      return months.map(m => ({ label: m.label, value: sums[m.key] }));
+    })();
+
+    const complaintsByCategory = (() => {
+      const counts = {};
+      (analytics?.complaintsByCategory || []).forEach(({ category }) => {
+        counts[category] = (counts[category] || 0) + 1;
+      });
+      const entries = Object.entries(counts).map(([label, value]) => ({ label, value }));
+      return entries.length > 0 ? entries : [
+        { label: 'general', value: 0 },
+        { label: 'maintenance', value: 0 },
+        { label: 'security', value: 0 },
+      ];
+    })();
+
+    const BarChart = ({ data, height = 220, valuePrefix = '' }) => {
+      const margin = { top: 10, right: 6, bottom: 18, left: 18 };
+      const innerH = height - margin.top - margin.bottom;
+      const width = 100; // viewBox width
+      const innerW = width - margin.left - margin.right;
+      const maxVal = Math.max(1, ...data.map(d => d.value));
+      const niceMax = Math.ceil(maxVal / 5) * 5 || 1;
+      const barW = innerW / Math.max(1, data.length);
+      const yScale = (v) => innerH - (v / niceMax) * innerH;
+
+      const ticks = Array.from({ length: 5 }, (_, i) => Math.round((niceMax / 4) * i));
+
+      return (
+        <div className="w-full" style={{ height }}>
+          <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full h-full">
+            {/* Grid lines */}
+            <g transform={`translate(${margin.left},${margin.top})`}>
+              {ticks.map((t, i) => (
+                <g key={i}>
+                  <line x1={0} x2={innerW} y1={yScale(t)} y2={yScale(t)} stroke="#e2e8f0" strokeWidth="0.5" />
+                  <text x={-2} y={yScale(t) + 3} fontSize="4" textAnchor="end" fill="#94a3b8">{valuePrefix}{t}</text>
+                </g>
+              ))}
+              {data.map((d, i) => {
+                const x = i * barW + barW * 0.15;
+                const w = barW * 0.7;
+                const h = innerH - yScale(d.value);
+                const y = yScale(d.value);
+                return (
+                  <g key={i}>
+                    <rect x={x} y={y} width={w} height={h} fill="#f59e0b" rx="2">
+                      <title>{`${d.label}: ${valuePrefix}${d.value}`}</title>
+                    </rect>
+                    <text x={x + w / 2} y={innerH + 12} fontSize="4" textAnchor="middle" fill="#64748b">{d.label}</text>
+                  </g>
+                );
+              })}
+            </g>
+          </svg>
+        </div>
+      );
+    };
+
+    const LineChart = ({ data, height = 220, valuePrefix = '' }) => {
+      const margin = { top: 12, right: 6, bottom: 18, left: 18 };
+      const width = 100;
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+      const maxVal = Math.max(1, ...data.map(d => d.value));
+      const niceMax = Math.ceil(maxVal / 5) * 5 || 1;
+      const stepX = innerW / Math.max(1, data.length - 1);
+      const yScale = (v) => innerH - (v / niceMax) * innerH;
+      const xScale = (i) => i * stepX;
+      const ticks = Array.from({ length: 5 }, (_, i) => Math.round((niceMax / 4) * i));
+      const points = data.map((d, i) => `${xScale(i)},${yScale(d.value)}`).join(' ');
+
+      return (
+        <div className="w-full" style={{ height }}>
+          <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full h-full">
+            <g transform={`translate(${margin.left},${margin.top})`}>
+              {ticks.map((t, i) => (
+                <g key={i}>
+                  <line x1={0} x2={innerW} y1={yScale(t)} y2={yScale(t)} stroke="#e2e8f0" strokeWidth="0.5" />
+                  <text x={-2} y={yScale(t) + 3} fontSize="4" textAnchor="end" fill="#94a3b8">{valuePrefix}{t}</text>
+                </g>
+              ))}
+              <polyline fill="none" stroke="#f59e0b" strokeWidth="2" points={points} />
+              {data.map((d, i) => (
+                <g key={i}>
+                  <circle cx={xScale(i)} cy={yScale(d.value)} r={1.3} fill="#f59e0b">
+                    <title>{`${d.label}: ${valuePrefix}${d.value}`}</title>
+                  </circle>
+                  <text x={xScale(i)} y={innerH + 12} fontSize="4" textAnchor="middle" fill="#64748b">{d.label}</text>
+                </g>
+              ))}
+            </g>
+          </svg>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-6">
+        <h2 className="text-xl font-semibold text-slate-800">Analytics & Reports</h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <div className="flex items-center space-x-4">
+              <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">New Registrations (6 mo)</h3>
+                <p className="text-2xl font-bold text-slate-900">{registrationsByMonth.reduce((a,b)=>a+b.value,0)}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <div className="flex items-center space-x-4">
+              <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">Revenue (6 mo)</h3>
+                <p className="text-2xl font-bold text-slate-900">${revenueByMonth.reduce((a,b)=>a+b.value,0).toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <div className="flex items-center space-x-4">
+              <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
+                <Activity className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">Active Students</h3>
+                <p className="text-2xl font-bold text-slate-900">{Math.floor((dashboardStats.totalStudents || 0) * 0.95)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Monthly Registrations</h3>
+            <BarChart data={registrationsByMonth} />
+          </div>
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Monthly Revenue</h3>
+            <LineChart data={revenueByMonth} valuePrefix="$" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <h3 className="text-lg font-semibold text-slate-800 mb-4">Complaints by Category (30 days)</h3>
+          <BarChart data={complaintsByCategory} />
+        </div>
+      </div>
+    );
+  };
 
   const renderSettings = () => (
     <div className="space-y-6">
@@ -594,14 +1410,134 @@ const AdminDashboard = () => {
     </div>
   );
 
+  const RoomModal = () => {
+    const { register, handleSubmit, formState: { errors, isValid }, reset } = useForm({
+      resolver: zodResolver(roomSchema),
+      mode: 'onChange',
+      defaultValues: {
+        room_number: '',
+        floor: '',
+        room_type: 'standard',
+        capacity: '1',
+        price: ''
+      }
+    });
+
+    const onSubmit = (data) => {
+      handleCreateRoom(data);
+      reset();
+    };
+
+    if (!showRoomModal) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+          <h3 className="text-xl font-semibold text-slate-800 mb-4">Add New Room</h3>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Room Number *</label>
+                <input
+                  type="text"
+                  {...register('room_number')}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.room_number ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
+                  placeholder="101"
+                />
+                {errors.room_number && <p className="mt-1 text-sm text-red-600">{errors.room_number.message}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Floor *</label>
+                <input
+                  type="number"
+                  {...register('floor')}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.floor ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
+                  min="0"
+                />
+                {errors.floor && <p className="mt-1 text-sm text-red-600">{errors.floor.message}</p>}
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Room Type</label>
+              <select
+                {...register('room_type')}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.room_type ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
+              >
+                <option value="standard">Standard</option>
+                <option value="deluxe">Deluxe</option>
+                <option value="suite">Suite</option>
+              </select>
+              {errors.room_type && <p className="mt-1 text-sm text-red-600">{errors.room_type.message}</p>}
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Capacity</label>
+                <select
+                  {...register('capacity')}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.capacity ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
+                >
+                  <option value="1">1 Person</option>
+                  <option value="2">2 Persons</option>
+                  <option value="3">3 Persons</option>
+                  <option value="4">4 Persons</option>
+                </select>
+                {errors.capacity && <p className="mt-1 text-sm text-red-600">{errors.capacity.message}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Monthly Price *</label>
+                <input
+                  type="number"
+                  {...register('price')}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.price ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
+                  placeholder="1200"
+                  min="0"
+                  step="0.01"
+                />
+                {errors.price && <p className="mt-1 text-sm text-red-600">{errors.price.message}</p>}
+              </div>
+            </div>
+            
+            <div className="flex space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowRoomModal(false)}
+                className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                disabled={isSubmitting || !isValid}
+              >
+                {isSubmitting ? 'Creating...' : 'Create Room'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
         return renderOverview();
-      case 'hostels':
-        return renderHostels();
       case 'students':
         return renderStudents();
+      case 'rooms':
+        return renderRooms();
+      case 'room-allocations':
+        return <RoomAllocation />;
+      case 'complaints':
+        return renderComplaints();
+      case 'leave':
+        return renderLeaveRequests();
+      case 'payments':
+        return renderPayments();
       case 'analytics':
         return renderAnalytics();
       case 'settings':
@@ -612,80 +1548,97 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
-      {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Link to="/" className="flex items-center space-x-3">
-              <Logo size="lg" animated={true} />
-            </Link>
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex">
+      {/* Sidebar Navigation */}
+      <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40">
+        {/* Logo */}
+        <div className="p-6 border-b border-amber-200/50">
+          <Link to="/" className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-red-600 rounded-lg flex items-center justify-center">
+              <Shield className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <span className="text-xl font-bold text-slate-900">HostelHaven</span>
+              <div className="text-xs text-slate-500">Admin Portal</div>
+            </div>
+          </Link>
+        </div>
 
-            <div className="flex items-center space-x-4">
-              <div className="hidden md:flex items-center space-x-2">
-                <div className="w-8 h-8 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-                <div className="text-sm">
-                  <p className="font-medium text-slate-900">{user.fullName}</p>
-                  <p className="text-slate-500">Administrator</p>
-                </div>
-              </div>
-              
-              <button
-                onClick={handleLogout}
-                className="flex items-center space-x-2 px-3 py-2 text-slate-600 hover:text-amber-700 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden md:block">Logout</span>
-              </button>
+        {/* User Profile */}
+        <div className="p-6 border-b border-amber-200/50">
+          <div className="flex items-center space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-full flex items-center justify-center">
+              <Shield className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <p className="font-medium text-slate-900">{user.fullName}</p>
+              <p className="text-sm text-slate-500">Administrator</p>
+              <p className="text-xs text-slate-400">{user.email}</p>
             </div>
           </div>
         </div>
-      </nav>
+
+        {/* Navigation Menu */}
+        <nav className="p-4">
+          <div className="space-y-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors text-left ${
+                  activeTab === tab.id
+                    ? 'bg-red-600 text-white shadow-lg'
+                    : 'text-slate-600 hover:bg-red-50 hover:text-red-700'
+                }`}
+              >
+                <tab.icon className="w-5 h-5" />
+                <span className="font-medium">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        {/* Logout Button */}
+        <div className="absolute bottom-6 left-4 right-4">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center space-x-3 px-4 py-3 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="font-medium">Logout</span>
+          </button>
+        </div>
+      </div>
 
       {/* Main Content */}
-      <main className="pt-20 pb-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center space-x-4 mb-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-xl flex items-center justify-center">
-                <Shield className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-slate-800">Admin Dashboard</h1>
-                <p className="text-slate-600">Manage the entire hostel system</p>
-              </div>
+      <div className="flex-1 ml-64">
+        {/* Top Header */}
+        <header className="bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-xl flex items-center justify-center">
+              <Shield className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-800">
+                {tabs.find(tab => tab.id === activeTab)?.label || 'Admin Dashboard'}
+              </h1>
+              <p className="text-slate-600">Manage the entire hostel system</p>
             </div>
           </div>
+        </header>
 
-          {/* Tabs */}
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-2 mb-8">
-            <div className="flex space-x-1">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
-                    activeTab === tab.id
-                      ? 'bg-amber-600 text-white'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <tab.icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              ))}
-            </div>
+        {/* Content Area */}
+        <main className="p-6">
+          <div className="max-w-6xl mx-auto">
+            {renderContent()}
           </div>
+        </main>
+      </div>
 
-          {/* Content */}
-          {renderContent()}
-        </div>
-      </main>
+      {/* Modals */}
+      <RoomModal />
     </div>
   );
 };
 
-export default AdminDashboard; 
+export default AdminDashboard;
