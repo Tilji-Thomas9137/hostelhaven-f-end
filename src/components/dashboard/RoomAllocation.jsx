@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNotification } from '../../contexts/NotificationContext';
 import { supabase } from '../../lib/supabase';
@@ -28,7 +28,8 @@ import {
   Home,
   User,
   Settings,
-  Bell
+  Bell,
+  X
 } from 'lucide-react';
 
 const RoomAllocation = () => {
@@ -46,7 +47,9 @@ const RoomAllocation = () => {
   // UI states
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState(null);
+  const [selectedRequest, setSelectedRequest] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Filters
@@ -58,6 +61,11 @@ const RoomAllocation = () => {
   useEffect(() => {
     fetchAllData();
   }, []);
+
+  // Refetch requests when filter changes
+  useEffect(() => {
+    fetchRequests();
+  }, [requestStatusFilter]);
 
   const fetchAllData = async () => {
     setIsLoading(true);
@@ -98,7 +106,7 @@ const RoomAllocation = () => {
     }
   };
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
@@ -121,7 +129,7 @@ const RoomAllocation = () => {
     } catch (error) {
       console.error('Error fetching requests:', error);
     }
-  };
+  }, [requestStatusFilter]);
 
   const fetchWaitlist = async () => {
     try {
@@ -268,110 +276,245 @@ const RoomAllocation = () => {
     }
   };
 
+  const handleViewRequest = (request) => {
+    setSelectedRequest(request);
+    setShowRequestModal(true);
+  };
+
+  const handleApproveRequest = async (request) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`http://localhost:3002/api/room-allocation/requests/${request.id}/approve`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        showNotification('Request approved successfully!', 'success');
+        await fetchAllData();
+      } else {
+        const error = await response.json();
+        showNotification(error.message || 'Failed to approve request', 'error');
+      }
+    } catch (error) {
+      console.error('Error approving request:', error);
+      showNotification('Failed to approve request', 'error');
+    }
+  };
+
+  const handleRejectRequest = async (request) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`http://localhost:3002/api/room-allocation/requests/${request.id}/reject`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        showNotification('Request rejected successfully!', 'success');
+        await fetchAllData();
+      } else {
+        const error = await response.json();
+        showNotification(error.message || 'Failed to reject request', 'error');
+      }
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      showNotification('Failed to reject request', 'error');
+    }
+  };
+
   const renderOverview = () => (
     <div className="space-y-8">
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-              <Building2 className="w-6 h-6" />
+        <div className="group relative overflow-hidden bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-100 rounded-3xl shadow-xl border border-blue-200/50 p-8 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 hover:scale-105">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-400/10 to-indigo-400/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+          <div className="relative flex items-center space-x-6">
+            <div className="relative">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                <Building2 className="w-8 h-8" />
+              </div>
+              <div className="absolute -top-2 -right-2 w-6 h-6 bg-emerald-400 rounded-full border-3 border-white flex items-center justify-center shadow-lg">
+                <span className="text-xs font-bold text-white">{statistics.rooms?.total || 0}</span>
+              </div>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">Total Rooms</h3>
-              <p className="text-2xl font-bold text-slate-900">{statistics.rooms?.total || 0}</p>
-              <p className="text-sm text-slate-600">Available: {statistics.rooms?.available || 0}</p>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Total Rooms</h3>
+              <p className="text-3xl font-black text-slate-900 mb-1">{statistics.rooms?.total || 0}</p>
+              <p className="text-sm font-semibold text-blue-600 bg-blue-100 px-3 py-1 rounded-full inline-block">
+                Available: {statistics.rooms?.available || 0}
+              </p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
-              <UserCheck className="w-6 h-6" />
+        <div className="group relative overflow-hidden bg-gradient-to-br from-emerald-50 via-green-100 to-teal-100 rounded-3xl shadow-xl border border-emerald-200/50 p-8 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 hover:scale-105">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/10 to-teal-400/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+          <div className="relative flex items-center space-x-6">
+            <div className="relative">
+              <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                <UserCheck className="w-8 h-8" />
+              </div>
+              <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-400 rounded-full border-3 border-white flex items-center justify-center shadow-lg">
+                <span className="text-xs font-bold text-white">{statistics.requests?.allocated || 0}</span>
+              </div>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">Allocated</h3>
-              <p className="text-2xl font-bold text-slate-900">{statistics.requests?.allocated || 0}</p>
-              <p className="text-sm text-slate-600">Students housed</p>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Allocated</h3>
+              <p className="text-3xl font-black text-slate-900 mb-1">{statistics.requests?.allocated || 0}</p>
+              <p className="text-sm font-semibold text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full inline-block">
+                Students housed
+              </p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-yellow-100 text-yellow-600 rounded-xl flex items-center justify-center">
-              <Clock className="w-6 h-6" />
+        <div className="group relative overflow-hidden bg-gradient-to-br from-amber-50 via-orange-100 to-yellow-100 rounded-3xl shadow-xl border border-amber-200/50 p-8 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 hover:scale-105">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 to-orange-400/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+          <div className="relative flex items-center space-x-6">
+            <div className="relative">
+              <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                <Clock className="w-8 h-8" />
+              </div>
+              <div className="absolute -top-2 -right-2 w-6 h-6 bg-orange-400 rounded-full border-3 border-white flex items-center justify-center shadow-lg">
+                <span className="text-xs font-bold text-white">{statistics.requests?.pending || 0}</span>
+              </div>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">Pending</h3>
-              <p className="text-2xl font-bold text-slate-900">{statistics.requests?.pending || 0}</p>
-              <p className="text-sm text-slate-600">Awaiting allocation</p>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Pending</h3>
+              <p className="text-3xl font-black text-slate-900 mb-1">{statistics.requests?.pending || 0}</p>
+              <p className="text-sm font-semibold text-amber-600 bg-amber-100 px-3 py-1 rounded-full inline-block">
+                Awaiting allocation
+              </p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
-              <Users className="w-6 h-6" />
+        <div className="group relative overflow-hidden bg-gradient-to-br from-purple-50 via-violet-100 to-indigo-100 rounded-3xl shadow-xl border border-purple-200/50 p-8 hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2 hover:scale-105">
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-400/10 to-violet-400/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+          <div className="relative flex items-center space-x-6">
+            <div className="relative">
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-violet-600 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                <Users className="w-8 h-8" />
+              </div>
+              <div className="absolute -top-2 -right-2 w-6 h-6 bg-violet-400 rounded-full border-3 border-white flex items-center justify-center shadow-lg">
+                <span className="text-xs font-bold text-white">{statistics.requests?.waitlisted || 0}</span>
+              </div>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">Waitlist</h3>
-              <p className="text-2xl font-bold text-slate-900">{statistics.requests?.waitlisted || 0}</p>
-              <p className="text-sm text-slate-600">In queue</p>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Waitlist</h3>
+              <p className="text-3xl font-black text-slate-900 mb-1">{statistics.requests?.waitlisted || 0}</p>
+              <p className="text-sm font-semibold text-purple-600 bg-purple-100 px-3 py-1 rounded-full inline-block">
+                In queue
+              </p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Occupancy Overview */}
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-6">Occupancy Overview</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="text-center">
-            <div className="text-3xl font-bold text-blue-600 mb-2">{statistics.rooms?.total_capacity || 0}</div>
-            <div className="text-slate-600">Total Capacity</div>
+      <div className="group relative overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-3xl shadow-xl border border-slate-200/50 p-8 hover:shadow-2xl transition-all duration-500">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-400/5 to-indigo-400/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+        <div className="relative">
+          <div className="flex items-center space-x-4 mb-8">
+            <div className="w-12 h-12 bg-gradient-to-br from-slate-600 to-slate-700 text-white rounded-2xl flex items-center justify-center shadow-lg">
+              <BarChart3 className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800">Occupancy Overview</h2>
+              <p className="text-slate-600">Real-time room utilization statistics</p>
+            </div>
           </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-green-600 mb-2">{statistics.rooms?.total_occupied || 0}</div>
-            <div className="text-slate-600">Current Occupancy</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-purple-600 mb-2">{statistics.rooms?.occupancy_rate || 0}%</div>
-            <div className="text-slate-600">Occupancy Rate</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="group/item text-center p-6 bg-white/60 backdrop-blur-sm rounded-2xl border border-white/40 hover:bg-white/80 transition-all duration-300 hover:scale-105">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg group-hover/item:scale-110 transition-transform duration-300">
+                <Building2 className="w-8 h-8" />
+              </div>
+              <div className="text-4xl font-black text-slate-900 mb-2">{statistics.rooms?.total_capacity || 0}</div>
+              <div className="text-slate-600 font-semibold">Total Capacity</div>
+            </div>
+            <div className="group/item text-center p-6 bg-white/60 backdrop-blur-sm rounded-2xl border border-white/40 hover:bg-white/80 transition-all duration-300 hover:scale-105">
+              <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg group-hover/item:scale-110 transition-transform duration-300">
+                <UserCheck className="w-8 h-8" />
+              </div>
+              <div className="text-4xl font-black text-slate-900 mb-2">{statistics.rooms?.total_occupied || 0}</div>
+              <div className="text-slate-600 font-semibold">Current Occupancy</div>
+            </div>
+            <div className="group/item text-center p-6 bg-white/60 backdrop-blur-sm rounded-2xl border border-white/40 hover:bg-white/80 transition-all duration-300 hover:scale-105">
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-violet-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg group-hover/item:scale-110 transition-transform duration-300">
+                <TrendingUp className="w-8 h-8" />
+              </div>
+              <div className="text-4xl font-black text-slate-900 mb-2">{statistics.rooms?.occupancy_rate || 0}%</div>
+              <div className="text-slate-600 font-semibold">Occupancy Rate</div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-6">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button
-            onClick={() => setShowRoomModal(true)}
-            className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
-          >
-            <Plus className="w-5 h-5 text-blue-600" />
-            <span className="font-medium text-blue-800">Add New Room</span>
-          </button>
-          
-          <button
-            onClick={() => setShowBatchModal(true)}
-            className="flex items-center space-x-3 p-4 bg-green-50 hover:bg-green-100 rounded-xl transition-colors"
-          >
-            <Play className="w-5 h-5 text-green-600" />
-            <span className="font-medium text-green-800">Run Batch Allocation</span>
-          </button>
-          
-          <button
-            onClick={handleProcessWaitlist}
-            disabled={isSubmitting}
-            className="flex items-center space-x-3 p-4 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-5 h-5 text-purple-600 ${isSubmitting ? 'animate-spin' : ''}`} />
-            <span className="font-medium text-purple-800">Process Waitlist</span>
-          </button>
+      <div className="group relative overflow-hidden bg-gradient-to-br from-slate-50 via-amber-50 to-orange-50 rounded-3xl shadow-xl border border-amber-200/50 p-8 hover:shadow-2xl transition-all duration-500">
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-400/5 to-orange-400/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+        <div className="relative">
+          <div className="flex items-center space-x-4 mb-8">
+            <div className="w-12 h-12 bg-gradient-to-br from-amber-600 to-orange-600 text-white rounded-2xl flex items-center justify-center shadow-lg">
+              <Settings className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800">Quick Actions</h2>
+              <p className="text-slate-600">Manage rooms and allocations efficiently</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <button
+              onClick={() => setShowRoomModal(true)}
+              className="group/action flex items-center space-x-4 p-6 bg-white/60 backdrop-blur-sm hover:bg-white/80 rounded-2xl border border-white/40 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg group-hover/action:scale-110 transition-transform duration-300">
+                <Plus className="w-6 h-6" />
+              </div>
+              <div className="text-left">
+                <span className="font-semibold text-slate-800 block">Add New Room</span>
+                <span className="text-sm text-slate-600">Create a new room entry</span>
+              </div>
+            </button>
+            
+            <button
+              onClick={() => setShowBatchModal(true)}
+              className="group/action flex items-center space-x-4 p-6 bg-white/60 backdrop-blur-sm hover:bg-white/80 rounded-2xl border border-white/40 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-xl flex items-center justify-center shadow-lg group-hover/action:scale-110 transition-transform duration-300">
+                <Play className="w-6 h-6" />
+              </div>
+              <div className="text-left">
+                <span className="font-semibold text-slate-800 block">Run Batch Allocation</span>
+                <span className="text-sm text-slate-600">Process multiple allocations</span>
+              </div>
+            </button>
+            
+            <button
+              onClick={handleProcessWaitlist}
+              disabled={isSubmitting}
+              className="group/action flex items-center space-x-4 p-6 bg-white/60 backdrop-blur-sm hover:bg-white/80 rounded-2xl border border-white/40 transition-all duration-300 hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-violet-600 text-white rounded-xl flex items-center justify-center shadow-lg group-hover/action:scale-110 transition-transform duration-300">
+                <RefreshCw className={`w-6 h-6 ${isSubmitting ? 'animate-spin' : ''}`} />
+              </div>
+              <div className="text-left">
+                <span className="font-semibold text-slate-800 block">Process Waitlist</span>
+                <span className="text-sm text-slate-600">Handle pending requests</span>
+              </div>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -567,12 +710,38 @@ const RoomAllocation = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
-                      <button className="text-amber-600 hover:text-amber-700">
+                      <button 
+                        onClick={() => handleViewRequest(request)}
+                        className="group relative inline-flex items-center justify-center w-8 h-8 bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-700 rounded-lg transition-all duration-200 hover:scale-105"
+                        title="View Details"
+                      >
                         <Eye className="w-4 h-4" />
+                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                          View Details
+                        </div>
                       </button>
                       {request.status === 'pending' && (
-                        <button className="text-green-600 hover:text-green-700">
+                        <button 
+                          onClick={() => handleApproveRequest(request)}
+                          className="group relative inline-flex items-center justify-center w-8 h-8 bg-green-50 hover:bg-green-100 text-green-600 hover:text-green-700 rounded-lg transition-all duration-200 hover:scale-105"
+                          title="Approve Request"
+                        >
                           <CheckCircle className="w-4 h-4" />
+                          <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                            Approve Request
+                          </div>
+                        </button>
+                      )}
+                      {(request.status === 'pending' || request.status === 'waitlisted') && (
+                        <button 
+                          onClick={() => handleRejectRequest(request)}
+                          className="group relative inline-flex items-center justify-center w-8 h-8 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 rounded-lg transition-all duration-200 hover:scale-105"
+                          title="Reject Request"
+                        >
+                          <X className="w-4 h-4" />
+                          <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                            Reject Request
+                          </div>
                         </button>
                       )}
                     </div>
@@ -862,6 +1031,169 @@ const RoomAllocation = () => {
     );
   };
 
+  const RequestModal = () => {
+    if (!showRequestModal || !selectedRequest) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-8">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg">
+                  <Eye className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-800">Request Details</h2>
+                  <p className="text-slate-600">Student room allocation request information</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowRequestModal(false)}
+                className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl flex items-center justify-center transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="space-y-6">
+              {/* Student Information */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200/50">
+                <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                  <User className="w-5 h-5 text-blue-600" />
+                  <span>Student Information</span>
+                </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Name</label>
+                      <p className="text-slate-900 font-semibold">{selectedRequest.users?.full_name || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Email</label>
+                      <p className="text-slate-900">{selectedRequest.users?.email || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Phone</label>
+                      <p className="text-slate-900">{selectedRequest.users?.phone || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Admission Number</label>
+                      <p className="text-slate-900">{selectedRequest.users?.user_profiles?.[0]?.admission_number || 'N/A'}</p>
+                    </div>
+                  </div>
+              </div>
+
+              {/* Request Details */}
+              <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl p-6 border border-emerald-200/50">
+                <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                  <Building2 className="w-5 h-5 text-emerald-600" />
+                  <span>Request Details</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Preferred Room Type</label>
+                    <p className="text-slate-900 font-semibold">{selectedRequest.preferred_room_type || 'Any'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Preferred Floor</label>
+                    <p className="text-slate-900">{selectedRequest.preferred_floor || 'Any'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Priority Score</label>
+                    <p className="text-slate-900 font-semibold">{selectedRequest.priority_score || 0}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Request Date</label>
+                    <p className="text-slate-900">{new Date(selectedRequest.requested_at).toLocaleDateString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Information */}
+              <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-6 border border-amber-200/50">
+                <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                  <Activity className="w-5 h-5 text-amber-600" />
+                  <span>Status Information</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Current Status</label>
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                        selectedRequest.status === 'allocated' ? 'bg-green-100 text-green-800' : 
+                        selectedRequest.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                        selectedRequest.status === 'waitlisted' ? 'bg-purple-100 text-purple-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {selectedRequest.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Allocated Room</label>
+                    <p className="text-slate-900">
+                      {selectedRequest.allocated_room ? 
+                        `Room ${selectedRequest.allocated_room.room_number} (${selectedRequest.allocated_room.room_type})` : 
+                        'Not allocated'
+                      }
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Special Requirements */}
+              {selectedRequest.special_requirements && (
+                <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-2xl p-6 border border-purple-200/50">
+                  <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                    <Bell className="w-5 h-5 text-purple-600" />
+                    <span>Special Requirements</span>
+                  </h3>
+                  <p className="text-slate-900">{selectedRequest.special_requirements}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end space-x-4 mt-8 pt-6 border-t border-slate-200">
+              <button
+                onClick={() => setShowRequestModal(false)}
+                className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-semibold"
+              >
+                Close
+              </button>
+              {selectedRequest.status === 'pending' && (
+                <>
+                  <button
+                    onClick={() => {
+                      handleApproveRequest(selectedRequest);
+                      setShowRequestModal(false);
+                    }}
+                    className="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold flex items-center space-x-2"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Approve</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleRejectRequest(selectedRequest);
+                      setShowRequestModal(false);
+                    }}
+                    className="px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold flex items-center space-x-2"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>Reject</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -874,50 +1206,74 @@ const RoomAllocation = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Room Allocation System</h1>
-          <p className="text-slate-600">Manage room assignments and student allocations</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={fetchAllData}
-            className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Refresh</span>
-          </button>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="space-y-8">
+          {/* Enhanced Header */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 p-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-6">
+                <div className="relative">
+                  <div className="p-4 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-lg">
+                    <Building2 className="w-8 h-8 text-white" />
+                  </div>
+                  <div className="absolute -top-2 -right-2 w-5 h-5 bg-green-400 rounded-full border-3 border-white animate-pulse"></div>
+                </div>
+                <div>
+                  <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                    Room Allocation System
+                  </h1>
+                  <p className="text-slate-600 text-lg font-medium mt-2">
+                    Intelligent room management and student allocation platform
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={fetchAllData}
+                  className="group flex items-center space-x-3 px-6 py-3 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 rounded-2xl hover:from-slate-200 hover:to-slate-300 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                >
+                  <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
+                  <span className="font-semibold">Refresh Data</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Enhanced Tabs */}
+          <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-2">
+            <nav className="flex space-x-2">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`group flex items-center space-x-3 py-4 px-6 rounded-xl font-semibold text-sm transition-all duration-300 ${
+                    activeTab === tab.id
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg transform scale-105'
+                      : 'text-slate-600 hover:text-slate-800 hover:bg-white/50 hover:scale-102'
+                  }`}
+                >
+                  <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'text-white' : 'text-slate-500 group-hover:text-slate-700'}`} />
+                  <span>{tab.label}</span>
+                  {activeTab === tab.id && (
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                  )}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Enhanced Content */}
+          <div className="bg-white/70 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 p-8">
+            {renderContent()}
+          </div>
+
+          {/* Modals */}
+          <RoomModal />
+          <BatchModal />
+          <RequestModal />
         </div>
       </div>
-
-      {/* Tabs */}
-      <div className="border-b border-slate-200">
-        <nav className="-mb-px flex space-x-8">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab.id
-                  ? 'border-amber-500 text-amber-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-              }`}
-            >
-              <tab.icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Content */}
-      {renderContent()}
-
-      {/* Modals */}
-      <RoomModal />
-      <BatchModal />
     </div>
   );
 };

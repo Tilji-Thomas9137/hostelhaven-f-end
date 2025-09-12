@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNotification } from '../../contexts/NotificationContext';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -72,6 +72,8 @@ const AdminDashboard = () => {
   const [editingRoom, setEditingRoom] = useState(null);
   const [isSubmittingRoom, setIsSubmittingRoom] = useState(false);
   const [showRoomAllocationModal, setShowRoomAllocationModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
   const [requestToAllocate, setRequestToAllocate] = useState(null);
   const [availableRooms, setAvailableRooms] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState('');
@@ -282,7 +284,7 @@ const AdminDashboard = () => {
     }
   };
 
-  const fetchRoomsDashboardData = async () => {
+  const fetchRoomsDashboardData = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
@@ -338,7 +340,7 @@ const AdminDashboard = () => {
       setRoomRequests([]);
       setRoomAllocations([]);
     }
-  };
+  }, []);
 
   const handleAddRoom = async (e) => {
     e.preventDefault();
@@ -654,7 +656,8 @@ const AdminDashboard = () => {
           Requested: ${new Date(requestDetails.requested_at).toLocaleString()}
         `;
         
-        alert(details);
+        setSelectedRequest(requestDetails);
+        setShowRequestModal(true);
       } else {
         showNotification('Failed to fetch request details', 'error');
       }
@@ -3447,6 +3450,166 @@ const AdminDashboard = () => {
               >
                 Allocate Room
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request Details Modal */}
+      {showRequestModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-8">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg">
+                    <Eye className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-800">Request Details</h2>
+                    <p className="text-slate-600">Student room allocation request information</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowRequestModal(false)}
+                  className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl flex items-center justify-center transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="space-y-6">
+                {/* Student Information */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200/50">
+                  <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                    <User className="w-5 h-5 text-blue-600" />
+                    <span>Student Information</span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Name</label>
+                      <p className="text-slate-900 font-semibold">{selectedRequest.users?.full_name || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Email</label>
+                      <p className="text-slate-900">{selectedRequest.users?.email || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Phone</label>
+                      <p className="text-slate-900">{selectedRequest.users?.phone || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Admission Number</label>
+                      <p className="text-slate-900">{selectedRequest.users?.user_profiles?.[0]?.admission_number || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Request Details */}
+                <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl p-6 border border-emerald-200/50">
+                  <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                    <Building2 className="w-5 h-5 text-emerald-600" />
+                    <span>Request Details</span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Preferred Room Type</label>
+                      <p className="text-slate-900 font-semibold">{selectedRequest.preferred_room_type || 'Any'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Preferred Floor</label>
+                      <p className="text-slate-900">{selectedRequest.preferred_floor || 'Any'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Priority Score</label>
+                      <p className="text-slate-900 font-semibold">{selectedRequest.priority_score || 0}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Request Date</label>
+                      <p className="text-slate-900">{new Date(selectedRequest.requested_at).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Information */}
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-6 border border-amber-200/50">
+                  <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                    <Activity className="w-5 h-5 text-amber-600" />
+                    <span>Status Information</span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Current Status</label>
+                      <div className="mt-1">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                          selectedRequest.status === 'allocated' ? 'bg-green-100 text-green-800' : 
+                          selectedRequest.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          selectedRequest.status === 'waitlisted' ? 'bg-purple-100 text-purple-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {selectedRequest.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-slate-600">Allocated Room</label>
+                      <p className="text-slate-900">
+                        {selectedRequest.allocated_room ? 
+                          `Room ${selectedRequest.allocated_room.room_number} (${selectedRequest.allocated_room.room_type})` : 
+                          'Not allocated'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Special Requirements */}
+                {selectedRequest.special_requirements && (
+                  <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-2xl p-6 border border-purple-200/50">
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                      <Bell className="w-5 h-5 text-purple-600" />
+                      <span>Special Requirements</span>
+                    </h3>
+                    <p className="text-slate-900">{selectedRequest.special_requirements}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end space-x-4 mt-8 pt-6 border-t border-slate-200">
+                <button
+                  onClick={() => setShowRequestModal(false)}
+                  className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-semibold"
+                >
+                  Close
+                </button>
+                {selectedRequest.status === 'pending' && (
+                  <>
+                    <button
+                      onClick={() => {
+                        handleApproveRequest(selectedRequest);
+                        setShowRequestModal(false);
+                      }}
+                      className="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold flex items-center space-x-2"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Approve</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleCancelRequest(selectedRequest);
+                        setShowRequestModal(false);
+                      }}
+                      className="px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold flex items-center space-x-2"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>Reject</span>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>

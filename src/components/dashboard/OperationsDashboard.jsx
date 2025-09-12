@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { useNotification } from '../../contexts/NotificationContext';
 import { 
   Building2, 
   Users, 
@@ -25,6 +26,7 @@ import {
 
 const OperationsDashboard = () => {
   const navigate = useNavigate();
+  const { showNotification } = useNotification();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -295,10 +297,10 @@ const OperationsDashboard = () => {
       if (res.ok) {
         fetchRoomAssignmentsData();
         fetchOpsStats();
-        alert('Student assigned to room');
+        showNotification('Student assigned to room successfully!', 'success');
       } else {
         const err = await res.json();
-        alert(err.message || 'Failed to assign');
+        showNotification(err.message || 'Failed to assign student', 'error');
       }
     } catch (e) {
       console.error('Error assigning student:', e);
@@ -345,7 +347,7 @@ const OperationsDashboard = () => {
     }
   };
 
-  const fetchRoomsDashboardData = async () => {
+  const fetchRoomsDashboardData = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
@@ -391,7 +393,7 @@ const OperationsDashboard = () => {
     } catch (e) {
       console.error('Error fetching rooms dashboard data:', e);
     }
-  };
+  }, []);
 
   const handleAddRoom = async (e) => {
     e.preventDefault();
