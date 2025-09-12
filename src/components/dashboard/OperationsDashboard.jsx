@@ -41,39 +41,128 @@ const OperationsDashboard = () => {
   const [roomsOverview, setRoomsOverview] = useState({ rooms: [], stats: null });
   const [isBusy, setIsBusy] = useState(false);
 
+  const [shouldRedirect, setShouldRedirect] = useState({ redirect: false, to: null });
+  const [roomsSearch, setRoomsSearch] = useState('');
+
+  // Rooms Dashboard states
+  const [roomsData, setRoomsData] = useState([]);
+  const [roomRequests, setRoomRequests] = useState([]);
+  const [roomAllocations, setRoomAllocations] = useState([]);
+  const [showAddRoomModal, setShowAddRoomModal] = useState(false);
+  const [isSubmittingRoom, setIsSubmittingRoom] = useState(false);
+  const [roomFormData, setRoomFormData] = useState({
+    room_number: '',
+    floor: '',
+    room_type: 'standard',
+    capacity: '',
+    price: '',
+    amenities: []
+  });
+  const [roomFormErrors, setRoomFormErrors] = useState({});
+  const [roomFilters, setRoomFilters] = useState({
+    status: '',
+    room_type: '',
+    floor: ''
+  });
+  const [requestFilters, setRequestFilters] = useState({
+    status: '',
+    room_type: ''
+  });
+
+  useEffect(() => {
+    if (shouldRedirect.redirect && shouldRedirect.to) {
+      navigate(shouldRedirect.to);
+    }
+  }, [shouldRedirect, navigate]);
+
   useEffect(() => {
     const fetchUserData = async () => {
       try {
+        setIsLoading(true);
+        console.log('Fetching user session...');
         const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (error || !session) {
-          navigate('/login');
+        if (error) {
+          console.error('Session error:', error);
+          setShouldRedirect({ redirect: true, to: '/login' });
           return;
         }
 
-        const response = await fetch('http://localhost:3002/api/auth/me', {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          setUser(result.data.user);
-          
-          if (!['hostel_operations_assistant', 'admin', 'warden'].includes(result.data.user.role)) {
-            setUser({...result.data.user, isNotOperations: true});
-          }
-          // Preload ops data for authorized roles
-          if (['hostel_operations_assistant', 'admin', 'warden'].includes(result.data.user.role)) {
-            fetchOpsStats();
-            fetchMaintenanceRequests();
-            fetchRoomAssignmentsData();
-            fetchRecentCheckIns();
-            fetchRoomsOverview();
-          }
+        if (!session) {
+          console.log('No session found, redirecting to login');
+          setShouldRedirect({ redirect: true, to: '/login' });
+          return;
         }
+
+        console.log('Session found, fetching user data...');
+        
+        // Try to get user data from Supabase directly first
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        
+        if (userError) {
+          console.error('Failed to get user data from Supabase:', userError);
+          setShouldRedirect({ redirect: true, to: '/login' });
+          return;
+        }
+
+        if (!userData?.user) {
+          console.error('No user data found');
+          setShouldRedirect({ redirect: true, to: '/login' });
+          return;
+        }
+
+        // Get additional user data from our backend
+        let userResult;
+        try {
+          const response = await fetch('http://localhost:3002/api/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) {
+            console.warn('Backend API failed, using Supabase user data...');
+            userResult = {
+              data: {
+                user: {
+                  ...userData.user,
+                  role: userData.user.user_metadata?.role || 'student'
+                }
+              }
+            };
+          } else {
+            userResult = await response.json();
+          }
+        } catch (error) {
+          console.warn('Backend API failed, using Supabase user data...');
+          userResult = {
+            data: {
+              user: {
+                ...userData.user,
+                role: userData.user.user_metadata?.role || 'student'
+              }
+            }
+          };
+        }
+
+        if (!['hostel_operations_assistant', 'admin', 'warden'].includes(userResult?.data?.user?.role)) {
+          console.log('User does not have operations access');
+          setShouldRedirect({ redirect: true, to: '/dashboard' });
+          return;
+        }
+
+        setUser(userResult.data.user);
+        console.log('Loading operations data...');
+        // Preload ops data
+        await Promise.all([
+          fetchOpsStats(),
+          fetchMaintenanceRequests(),
+          fetchRoomAssignmentsData(),
+          fetchRecentCheckIns(),
+          fetchRoomsOverview(),
+          fetchRoomsDashboardData()
+        ]);
       } catch (error) {
         console.error('Error fetching user data:', error);
       } finally {
@@ -256,6 +345,137 @@ const OperationsDashboard = () => {
     }
   };
 
+  const fetchRoomsDashboardData = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      
+      // Fetch rooms data
+      const roomsRes = await fetch('http://localhost:3002/api/room-allocation/rooms', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      // Fetch room requests
+      const requestsRes = await fetch('http://localhost:3002/api/room-allocation/requests', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      // Fetch room allocations
+      const allocationsRes = await fetch('http://localhost:3002/api/room-allocations', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (roomsRes.ok) {
+        const roomsResult = await roomsRes.json();
+        setRoomsData(roomsResult.data.rooms || []);
+      }
+
+      if (requestsRes.ok) {
+        const requestsResult = await requestsRes.json();
+        setRoomRequests(requestsResult.data.requests || []);
+      }
+
+      if (allocationsRes.ok) {
+        const allocationsResult = await allocationsRes.json();
+        setRoomAllocations(allocationsResult.data || []);
+      }
+    } catch (e) {
+      console.error('Error fetching rooms dashboard data:', e);
+    }
+  };
+
+  const handleAddRoom = async (e) => {
+    e.preventDefault();
+    
+    // Validate form
+    const errors = {};
+    if (!roomFormData.room_number.trim()) errors.room_number = 'Room number is required';
+    if (!roomFormData.capacity || roomFormData.capacity < 1) errors.capacity = 'Capacity must be at least 1';
+    if (roomFormData.price && roomFormData.price < 0) errors.price = 'Price must be positive';
+    
+    setRoomFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    setIsSubmittingRoom(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('http://localhost:3002/api/room-allocation/rooms', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          room_number: roomFormData.room_number,
+          floor: roomFormData.floor || null,
+          room_type: roomFormData.room_type,
+          capacity: parseInt(roomFormData.capacity),
+          price: roomFormData.price ? parseFloat(roomFormData.price) : null,
+          amenities: roomFormData.amenities
+        })
+      });
+
+      if (response.ok) {
+        setShowAddRoomModal(false);
+        setRoomFormData({
+          room_number: '',
+          floor: '',
+          room_type: 'standard',
+          capacity: '',
+          price: '',
+          amenities: []
+        });
+        setRoomFormErrors({});
+        await fetchRoomsDashboardData();
+        alert('Room added successfully!');
+      } else {
+        const error = await response.json();
+        alert(error.message || 'Failed to add room');
+      }
+    } catch (error) {
+      console.error('Error adding room:', error);
+      alert('Failed to add room');
+    } finally {
+      setIsSubmittingRoom(false);
+    }
+  };
+
+  const handleRoomFormChange = (e) => {
+    const { name, value } = e.target;
+    setRoomFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    
+    // Clear error when user starts typing
+    if (roomFormErrors[name]) {
+      setRoomFormErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+  };
+
+  const handleAmenityChange = (amenity) => {
+    setRoomFormData(prev => ({
+      ...prev,
+      amenities: prev.amenities.includes(amenity)
+        ? prev.amenities.filter(a => a !== amenity)
+        : [...prev.amenities, amenity]
+    }));
+  };
+
   // React to maintenance filters
   useEffect(() => {
     fetchMaintenanceRequests();
@@ -314,9 +534,8 @@ const OperationsDashboard = () => {
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench },
-    { id: 'assignments', label: 'Room Assignments', icon: Bed },
+    { id: 'rooms-dashboard', label: 'Rooms & Allocations', icon: Building2 },
     { id: 'checkins', label: 'Check-ins', icon: UserCheck },
-    { id: 'rooms', label: 'Rooms Overview', icon: Building2 },
     { id: 'reports', label: 'Reports', icon: FileText },
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
@@ -643,11 +862,84 @@ const OperationsDashboard = () => {
     </div>
   );
 
-  const [roomsSearch, setRoomsSearch] = useState('');
-  const renderRoomsOverview = () => (
-    <div className="space-y-6">
+  const renderRoomsDashboard = () => (
+    <div className="space-y-8">
+      {/* Header with Add Room Button */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800">Rooms Overview</h2>
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Rooms & Allocations Dashboard</h2>
+          <p className="text-slate-600">Manage rooms, requests, and allocations</p>
+        </div>
+        <button
+          onClick={() => setShowAddRoomModal(true)}
+          className="flex items-center space-x-2 px-6 py-3 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          <span>Add New Room</span>
+        </button>
+      </div>
+
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Total Rooms</h3>
+              <p className="text-2xl font-bold text-slate-900">{roomsData.length}</p>
+              <p className="text-sm text-slate-600">Available: {roomsData.filter(r => r.is_available).length}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-yellow-100 text-yellow-600 rounded-xl flex items-center justify-center">
+              <UserCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Pending Requests</h3>
+              <p className="text-2xl font-bold text-slate-900">{roomRequests.filter(r => r.status === 'pending').length}</p>
+              <p className="text-sm text-slate-600">Awaiting allocation</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Allocated</h3>
+              <p className="text-2xl font-bold text-slate-900">{roomAllocations.length}</p>
+              <p className="text-sm text-slate-600">Active allocations</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+              <Activity className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Occupancy Rate</h3>
+              <p className="text-2xl font-bold text-slate-900">
+                {roomsData.length > 0 ? Math.round((roomsData.reduce((sum, r) => sum + (r.occupied || 0), 0) / roomsData.reduce((sum, r) => sum + r.capacity, 0)) * 100) : 0}%
+              </p>
+              <p className="text-sm text-slate-600">Current utilization</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Rooms Section */}
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-semibold text-slate-800">Rooms Management</h3>
         <div className="flex items-center space-x-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -659,51 +951,263 @@ const OperationsDashboard = () => {
               className="pl-10 pr-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
             />
           </div>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-            <Download className="w-4 h-4" />
-            <span>Export</span>
-          </button>
+            <select
+              value={roomFilters.status}
+              onChange={(e) => setRoomFilters(prev => ({ ...prev, status: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            >
+              <option value="">All Status</option>
+              <option value="available">Available</option>
+              <option value="occupied">Occupied</option>
+              <option value="maintenance">Maintenance</option>
+            </select>
+            <select
+              value={roomFilters.room_type}
+              onChange={(e) => setRoomFilters(prev => ({ ...prev, room_type: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            >
+              <option value="">All Types</option>
+              <option value="standard">Standard</option>
+              <option value="deluxe">Deluxe</option>
+              <option value="premium">Premium</option>
+              <option value="suite">Suite</option>
+            </select>
         </div>
       </div>
       
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Floor</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Capacity</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Occupied</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Price</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {roomsOverview.rooms
-                .filter(r => {
-                  const q = roomsSearch.trim().toLowerCase();
-                  if (!q) return true;
-                  return String(r.room_number).toLowerCase().includes(q) || String(r.floor).toLowerCase().includes(q);
+              {roomsData
+                .filter(room => {
+                  const matchesSearch = !roomsSearch || 
+                    String(room.room_number).toLowerCase().includes(roomsSearch.toLowerCase()) ||
+                    String(room.floor).toLowerCase().includes(roomsSearch.toLowerCase());
+                  const matchesStatus = !roomFilters.status || room.status === roomFilters.status;
+                  const matchesType = !roomFilters.room_type || room.room_type === roomFilters.room_type;
+                  return matchesSearch && matchesStatus && matchesType;
                 })
-                .map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{r.room_number}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{r.floor}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{r.capacity}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{r.occupied}</td>
+                .map((room) => (
+                <tr key={room.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                    Room {room.room_number}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.floor || 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900 capitalize">{room.room_type}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.capacity}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.occupied || 0}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    {room.price ? `$${room.price}/month` : 'N/A'}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      r.status === 'available' ? 'bg-green-100 text-green-800' :
-                      r.status === 'occupied' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
+                      room.status === 'available' ? 'bg-green-100 text-green-800' :
+                      room.status === 'occupied' ? 'bg-blue-100 text-blue-800' : 
+                      'bg-red-100 text-red-800'
                     }`}>
-                      {r.status}
+                      {room.status}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      <button className="text-blue-600 hover:text-blue-700">
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button className="text-amber-600 hover:text-amber-700">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
-              {roomsOverview.rooms.length === 0 && (
+              {roomsData.length === 0 && (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-slate-500">No rooms data</td>
+                  <td colSpan="8" className="px-6 py-12 text-center text-slate-500">No rooms found</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Room Requests Section */}
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-semibold text-slate-800">Room Requests</h3>
+          <div className="flex items-center space-x-4">
+            <select
+              value={requestFilters.status}
+              onChange={(e) => setRequestFilters(prev => ({ ...prev, status: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            >
+              <option value="">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="allocated">Allocated</option>
+              <option value="waitlisted">Waitlisted</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <select
+              value={requestFilters.room_type}
+              onChange={(e) => setRequestFilters(prev => ({ ...prev, room_type: e.target.value }))}
+              className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            >
+              <option value="">All Types</option>
+              <option value="standard">Standard</option>
+              <option value="deluxe">Deluxe</option>
+              <option value="premium">Premium</option>
+              <option value="suite">Suite</option>
+            </select>
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Preferred Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Preferred Floor</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Priority</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Requested</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {roomRequests
+                .filter(request => {
+                  const matchesStatus = !requestFilters.status || request.status === requestFilters.status;
+                  const matchesType = !requestFilters.room_type || request.preferred_room_type === requestFilters.room_type;
+                  return matchesStatus && matchesType;
+                })
+                .map((request) => (
+                <tr key={request.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mr-3">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{request.user?.full_name || 'N/A'}</p>
+                        <p className="text-xs text-slate-500">{request.user?.email || ''}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900 capitalize">
+                    {request.preferred_room_type || 'Any'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    {request.preferred_floor || 'Any'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    {request.priority_score || 0}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      request.status === 'allocated' ? 'bg-green-100 text-green-800' :
+                      request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                      request.status === 'waitlisted' ? 'bg-purple-100 text-purple-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {request.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    {new Date(request.requested_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      {request.status === 'pending' && (
+                        <button className="text-green-600 hover:text-green-700">
+                          <CheckCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button className="text-amber-600 hover:text-amber-700">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {roomRequests.length === 0 && (
+                <tr>
+                  <td colSpan="7" className="px-6 py-12 text-center text-slate-500">No room requests found</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Room Allocations Section */}
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <h3 className="text-xl font-semibold text-slate-800 mb-6">Current Allocations</h3>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Floor</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Allocated</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {roomAllocations.map((allocation) => (
+                <tr key={allocation.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center mr-3">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{allocation.users?.full_name || 'N/A'}</p>
+                        <p className="text-xs text-slate-500">{allocation.users?.email || ''}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    Room {allocation.rooms?.room_number || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    {allocation.rooms?.floor || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900 capitalize">
+                    {allocation.rooms?.room_type || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    {new Date(allocation.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      <button className="text-red-600 hover:text-red-700">
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                      <button className="text-amber-600 hover:text-amber-700">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {roomAllocations.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500">No allocations found</td>
                 </tr>
               )}
             </tbody>
@@ -832,8 +1336,8 @@ const OperationsDashboard = () => {
         return renderRoomAssignments();
       case 'checkins':
         return renderCheckIns();
-      case 'rooms':
-        return renderRoomsOverview();
+      case 'rooms-dashboard':
+        return renderRoomsDashboard();
       case 'reports':
         return renderReports();
       case 'settings':
@@ -841,6 +1345,173 @@ const OperationsDashboard = () => {
       default:
         return renderOverview();
     }
+  };
+
+  const AddRoomModal = () => {
+    if (!showAddRoomModal) return null;
+
+    const availableAmenities = [
+      'WiFi', 'Air Conditioning', 'Heating', 'Private Bathroom', 
+      'Shared Bathroom', 'Kitchen', 'Laundry', 'Balcony', 
+      'Study Desk', 'Wardrobe', 'TV', 'Refrigerator'
+    ];
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl p-6 w-full max-w-2xl mx-4 relative max-h-[90vh] overflow-y-auto">
+          {/* Close Button */}
+          <button
+            onClick={() => setShowAddRoomModal(false)}
+            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+            disabled={isSubmittingRoom}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          
+          <h3 className="text-2xl font-semibold text-slate-800 mb-6 pr-8">Add New Room</h3>
+          
+          <form onSubmit={handleAddRoom} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Room Number *
+                </label>
+                <input
+                  type="text"
+                  name="room_number"
+                  value={roomFormData.room_number}
+                  onChange={handleRoomFormChange}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                    roomFormErrors.room_number ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'
+                  }`}
+                  placeholder="e.g., 101, A-205"
+                />
+                {roomFormErrors.room_number && (
+                  <p className="mt-1 text-sm text-red-600">{roomFormErrors.room_number}</p>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Floor
+                </label>
+                <input
+                  type="number"
+                  name="floor"
+                  value={roomFormData.floor}
+                  onChange={handleRoomFormChange}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  placeholder="e.g., 1, 2, 3"
+                  min="0"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Room Type
+                </label>
+                <select
+                  name="room_type"
+                  value={roomFormData.room_type}
+                  onChange={handleRoomFormChange}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                >
+                  <option value="standard">Standard</option>
+                  <option value="deluxe">Deluxe</option>
+                  <option value="premium">Premium</option>
+                  <option value="suite">Suite</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Capacity *
+                </label>
+                <input
+                  type="number"
+                  name="capacity"
+                  value={roomFormData.capacity}
+                  onChange={handleRoomFormChange}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                    roomFormErrors.capacity ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'
+                  }`}
+                  placeholder="e.g., 2, 4"
+                  min="1"
+                />
+                {roomFormErrors.capacity && (
+                  <p className="mt-1 text-sm text-red-600">{roomFormErrors.capacity}</p>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Price per Month ($)
+                </label>
+                <input
+                  type="number"
+                  name="price"
+                  value={roomFormData.price}
+                  onChange={handleRoomFormChange}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                    roomFormErrors.price ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'
+                  }`}
+                  placeholder="e.g., 500, 750"
+                  min="0"
+                  step="0.01"
+                />
+                {roomFormErrors.price && (
+                  <p className="mt-1 text-sm text-red-600">{roomFormErrors.price}</p>
+                )}
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-3">
+                Amenities
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {availableAmenities.map((amenity) => (
+                  <label key={amenity} className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={roomFormData.amenities.includes(amenity)}
+                      onChange={() => handleAmenityChange(amenity)}
+                      className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
+                    />
+                    <span className="text-sm text-slate-700">{amenity}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex space-x-4 pt-6">
+              <button
+                type="button"
+                onClick={() => setShowAddRoomModal(false)}
+                className="flex-1 px-6 py-3 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
+                disabled={isSubmittingRoom}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 px-6 py-3 bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+                disabled={isSubmittingRoom}
+              >
+                {isSubmittingRoom ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Adding Room...
+                  </>
+                ) : (
+                  'Add Room'
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -930,6 +1601,9 @@ const OperationsDashboard = () => {
           </div>
         </main>
       </div>
+      
+      {/* Modals */}
+      <AddRoomModal />
     </div>
   );
 };

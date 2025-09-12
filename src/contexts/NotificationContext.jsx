@@ -15,7 +15,7 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
 
   const showNotification = useCallback((message, type = 'success', duration = 3000) => {
-    const id = Date.now();
+    const id = Date.now() + Math.random();
     setNotifications(prev => [...prev, { id, message, type, duration }]);
     return id;
   }, []);

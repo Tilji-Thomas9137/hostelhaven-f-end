@@ -15,6 +15,9 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [showResendConfirmation, setShowResendConfirmation] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -51,13 +54,26 @@ const Login = () => {
         // Handle specific error cases
         if (error.message.includes('Email not confirmed')) {
           setError('Please check your email and click the confirmation link before logging in.');
+          setShowResendConfirmation(true);
         } else if (error.message.includes('Invalid login credentials')) {
           setError('Invalid email or password. Please try again.');
+          setShowResendConfirmation(false);
         } else if (error.message.includes('rate limit')) {
           setError('Too many login attempts. Please try again later.');
+          setShowResendConfirmation(false);
+        } else if (error.message.includes('Session has expired') || error.message.includes('session expired')) {
+          setError('Your session has expired. Please log in again.');
+          setShowResendConfirmation(false);
+        } else if (error.message.includes('JWT expired') || error.message.includes('expired')) {
+          setError('Your session has expired. Please log in again.');
+          setShowResendConfirmation(false);
+        } else if (error.message.includes('Invalid JWT') || error.message.includes('invalid token')) {
+          setError('Invalid authentication token. Please log in again.');
+          setShowResendConfirmation(false);
         } else {
           console.error('Login error:', error);
           setError(error.message || 'An error occurred during login. Please try again.');
+          setShowResendConfirmation(false);
         }
         return;
       }
@@ -74,6 +90,35 @@ const Login = () => {
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendConfirmation = async (email) => {
+    setResendLoading(true);
+    setResendMessage('');
+    
+    try {
+      const response = await fetch('http://localhost:3002/api/auth/resend-confirmation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setResendMessage('Confirmation email sent successfully! Please check your email.');
+        setShowResendConfirmation(false);
+      } else {
+        setResendMessage(data.message || 'Failed to resend confirmation email.');
+      }
+    } catch (error) {
+      console.error('Resend confirmation error:', error);
+      setResendMessage('Failed to resend confirmation email. Please try again.');
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -210,6 +255,32 @@ const Login = () => {
               {error && (
                 <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
                   {error}
+                </div>
+              )}
+
+              {/* Resend Confirmation */}
+              {showResendConfirmation && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl text-sm">
+                  <p className="mb-2">Didn't receive the confirmation email?</p>
+                  <button
+                    type="button"
+                    onClick={() => handleResendConfirmation(watch('email'))}
+                    disabled={resendLoading}
+                    className="text-amber-600 hover:text-amber-700 font-medium underline disabled:opacity-50"
+                  >
+                    {resendLoading ? 'Sending...' : 'Resend confirmation email'}
+                  </button>
+                </div>
+              )}
+
+              {/* Resend Message */}
+              {resendMessage && (
+                <div className={`px-4 py-3 rounded-xl text-sm ${
+                  resendMessage.includes('successfully') 
+                    ? 'bg-green-50 border border-green-200 text-green-700' 
+                    : 'bg-red-50 border border-red-200 text-red-700'
+                }`}>
+                  {resendMessage}
                 </div>
               )}
 

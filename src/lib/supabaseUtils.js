@@ -55,6 +55,47 @@ export const authUtils = {
       password: newPassword,
     })
     return { data, error }
+  },
+
+  // Refresh session
+  async refreshSession() {
+    const { data, error } = await supabase.auth.refreshSession()
+    return { data, error }
+  },
+
+  // Check if session is expired
+  isSessionExpired(session) {
+    if (!session) return true
+    const now = Math.floor(Date.now() / 1000)
+    return session.expires_at <= now
+  },
+
+  // Get valid session (refresh if needed)
+  async getValidSession() {
+    const { data: { session }, error } = await supabase.auth.getSession()
+    
+    if (error) {
+      return { session: null, error }
+    }
+
+    if (!session) {
+      return { session: null, error: new Error('No session found') }
+    }
+
+    // Check if session is expired
+    if (this.isSessionExpired(session)) {
+      console.log('Session expired, attempting to refresh...')
+      const { data: refreshData, error: refreshError } = await this.refreshSession()
+      
+      if (refreshError) {
+        console.error('Failed to refresh session:', refreshError)
+        return { session: null, error: refreshError }
+      }
+      
+      return { session: refreshData.session, error: null }
+    }
+
+    return { session, error: null }
   }
 }
 
@@ -71,7 +112,71 @@ export const redirectToRoleBasedDashboard = async (authData, navigate) => {
       return;
     }
 
-    // Get user profile from Supabase directly
+    // Get a valid session (refresh if needed)
+    const { session: validSession, error: sessionError } = await authUtils.getValidSession();
+    
+    if (sessionError || !validSession) {
+      console.error('Failed to get valid session:', sessionError);
+      navigate('/login');
+      return;
+    }
+
+    // Use the backend API to get or create user profile
+    const backendUrl = import.meta.env?.VITE_BACKEND_URL || 'http://localhost:3002';
+    
+    try {
+      const response = await fetch(`${backendUrl}/api/auth/me`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${validSession.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data?.user) {
+          console.log('User profile retrieved successfully:', result.data.user);
+          // Navigate to the dashboard
+          navigate('/dashboard');
+          return;
+        }
+      } else if (response.status === 401) {
+        console.error('Authentication failed - session expired');
+        // Try to refresh session and retry
+        const { session: refreshedSession, error: refreshError } = await authUtils.refreshSession();
+        
+        if (refreshError || !refreshedSession) {
+          console.error('Failed to refresh session:', refreshError);
+          navigate('/login');
+          return;
+        }
+
+        // Retry with refreshed session
+        const retryResponse = await fetch(`${backendUrl}/api/auth/me`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${refreshedSession.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (retryResponse.ok) {
+          const retryResult = await retryResponse.json();
+          if (retryResult.success && retryResult.data?.user) {
+            console.log('User profile retrieved successfully after refresh:', retryResult.data.user);
+            navigate('/dashboard');
+            return;
+          }
+        }
+      }
+    } catch (apiError) {
+      console.error('Error calling backend API:', apiError);
+    }
+
+    // Fallback: Try direct database access (this might fail due to RLS)
+    console.log('Backend API failed, trying direct database access...');
+    
     const { data: userProfile, error } = await supabase
       .from('users')
       .select('*')
@@ -80,37 +185,25 @@ export const redirectToRoleBasedDashboard = async (authData, navigate) => {
 
     if (error) {
       console.error('Error fetching user profile:', error);
-      navigate('/login');
+      // If we can't get the profile, still navigate to dashboard
+      // The dashboard will handle profile creation
+      navigate('/dashboard');
       return;
     }
 
     if (!userProfile) {
-      // Create user profile if it doesn't exist
-      const { data: newProfile, error: createError } = await supabase
-        .from('users')
-        .insert({
-          email: authData.user.email,
-          full_name: authData.user.user_metadata?.full_name || authData.user.email.split('@')[0],
-          phone: authData.user.user_metadata?.phone || null,
-          role: authData.user.user_metadata?.role || 'student'
-        })
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('Error creating user profile:', createError);
-        navigate('/login');
-        return;
-      }
-
-      userProfile = newProfile;
+      console.log('No user profile found, navigating to dashboard to handle creation...');
+      // Navigate to dashboard - it will handle profile creation
+      navigate('/dashboard');
+      return;
     }
 
     // Navigate to the dashboard
     navigate('/dashboard');
   } catch (error) {
     console.error('Error in role-based redirection:', error);
-    navigate('/login');
+    // Even if there's an error, try to navigate to dashboard
+    navigate('/dashboard');
   }
 };
 
@@ -656,6 +749,267 @@ export const realtimeUtils = {
   }
 }
 
+// Student profile functions
+export const profileUtils = {
+  // Get user profile
+  async getUserProfile(userId) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select(`
+        *,
+        users(full_name, email, phone),
+        rooms(room_number, floor, room_type)
+      `)
+      .eq('user_id', userId)
+      .single()
+    return { data, error }
+  },
+
+  // Get user profile by admission number
+  async getUserProfileByAdmission(admissionNumber) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select(`
+        *,
+        users(full_name, email, phone),
+        rooms(room_number, floor, room_type)
+      `)
+      .eq('admission_number', admissionNumber)
+      .single()
+    return { data, error }
+  },
+
+  // Create user profile
+  async createUserProfile(profileData) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .insert(profileData)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Update user profile
+  async updateUserProfile(userId, updates) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update(updates)
+      .eq('user_id', userId)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Check if user has profile
+  async hasUserProfile(userId) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('user_id', userId)
+      .single()
+    return { data: !!data, error }
+  },
+
+  // Get profile completion percentage
+  async getProfileCompletion(userId) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+
+    if (error || !data) {
+      return { completion: 0, missingFields: [], status: 'incomplete', error }
+    }
+
+    const requiredFields = [
+      'admission_number', 'course', 'batch_year', 'date_of_birth', 'gender',
+      'address', 'city', 'state', 'country', 'emergency_contact_name',
+      'emergency_contact_phone', 'parent_name', 'parent_phone', 'parent_email',
+      'aadhar_number', 'blood_group'
+    ]
+
+    const missingFields = requiredFields.filter(field => !data[field] || data[field] === '')
+    const completion = Math.round(((requiredFields.length - missingFields.length) / requiredFields.length) * 100)
+    
+    // Determine status based on completion
+    let status = data.status || 'incomplete'
+    if (completion === 100 && status === 'incomplete') {
+      status = 'complete'
+    }
+
+    return { completion, missingFields, status, error: null }
+  },
+
+  // Get all profiles (admin only)
+  async getAllProfiles() {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select(`
+        *,
+        users(full_name, email, phone, role),
+        rooms(room_number, floor, room_type)
+      `)
+      .order('created_at', { ascending: false })
+    return { data, error }
+  },
+
+  // Get profiles by course
+  async getProfilesByCourse(course) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select(`
+        *,
+        users(full_name, email, phone),
+        rooms(room_number, floor, room_type)
+      `)
+      .eq('course', course)
+      .order('admission_number', { ascending: true })
+    return { data, error }
+  },
+
+  // Get profiles by batch year
+  async getProfilesByBatch(batchYear) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select(`
+        *,
+        users(full_name, email, phone),
+        rooms(room_number, floor, room_type)
+      `)
+      .eq('batch_year', batchYear)
+      .order('admission_number', { ascending: true })
+    return { data, error }
+  },
+
+  // Get profiles by status
+  async getProfilesByStatus(status) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select(`
+        *,
+        users(full_name, email, phone),
+        rooms(room_number, floor, room_type)
+      `)
+      .eq('profile_status', status)
+      .order('created_at', { ascending: false })
+    return { data, error }
+  },
+
+  // Update profile status
+  async updateProfileStatus(userId, status) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update({ profile_status: status })
+      .eq('user_id', userId)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Update profile completion status
+  async updateProfileCompletionStatus(userId, status) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update({ status: status })
+      .eq('user_id', userId)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Assign room to profile
+  async assignRoomToProfile(userId, roomId) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update({ room_id: roomId })
+      .eq('user_id', userId)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Remove room assignment
+  async removeRoomAssignment(userId) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update({ room_id: null })
+      .eq('user_id', userId)
+      .select()
+      .single()
+    return { data, error }
+  },
+
+  // Search profiles
+  async searchProfiles(searchTerm) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select(`
+        *,
+        users(full_name, email, phone),
+        rooms(room_number, floor, room_type)
+      `)
+      .or(`admission_number.ilike.%${searchTerm}%,course.ilike.%${searchTerm}%,users.full_name.ilike.%${searchTerm}%`)
+      .order('created_at', { ascending: false })
+    return { data, error }
+  },
+
+  // Get profile statistics
+  async getProfileStats() {
+    const { data: totalProfiles, error: totalError } = await supabase
+      .from('user_profiles')
+      .select('id', { count: 'exact' })
+
+    const { data: activeProfiles, error: activeError } = await supabase
+      .from('user_profiles')
+      .select('id', { count: 'exact' })
+      .eq('profile_status', 'active')
+
+    const { data: courseStats, error: courseError } = await supabase
+      .from('user_profiles')
+      .select('course')
+      .eq('profile_status', 'active')
+
+    if (totalError || activeError || courseError) {
+      return { error: totalError || activeError || courseError }
+    }
+
+    // Count courses
+    const courseCounts = courseStats.reduce((acc, profile) => {
+      acc[profile.course] = (acc[profile.course] || 0) + 1
+      return acc
+    }, {})
+
+    return {
+      data: {
+        total: totalProfiles.length,
+        active: activeProfiles.length,
+        courseDistribution: courseCounts
+      },
+      error: null
+    }
+  },
+
+  // Check if user can perform operations (profile must be complete)
+  async canPerformOperations(userId) {
+    const { data, error } = await profileUtils.getUserProfile(userId)
+    
+    if (error || !data) {
+      return { canPerform: false, reason: 'Profile not found', error }
+    }
+
+    if (data.status === 'incomplete') {
+      return { canPerform: false, reason: 'Profile incomplete', error: null }
+    }
+
+    if (data.status === 'pending_review') {
+      return { canPerform: false, reason: 'Profile under review', error: null }
+    }
+
+    return { canPerform: true, reason: 'Profile complete', error: null }
+  }
+}
+
 // Export all utilities
 export default {
   auth: authUtils,
@@ -668,5 +1022,6 @@ export default {
   notification: notificationUtils,
   announcement: announcementUtils,
   maintenance: maintenanceUtils,
-  realtime: realtimeUtils
+  realtime: realtimeUtils,
+  profile: profileUtils
 } 

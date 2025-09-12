@@ -94,16 +94,24 @@ const SignUp = () => {
             phone: data.phone,
             role: data.role
           },
-          emailRedirectTo: `http://localhost:5173/auth/callback`
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
       });
 
       if (error) {
-        setError(error.message);
+        // Handle specific error cases
+        if (error.message.includes('User already registered')) {
+          setError('This email is already registered. Please try logging in instead.');
+        } else if (error.message.includes('Invalid email')) {
+          setError('Please provide a valid email address.');
+        } else if (error.message.includes('Password should be at least')) {
+          setError('Password must be at least 6 characters long.');
+        } else {
+          setError(error.message || 'Registration failed. Please try again.');
+        }
       } else {
         // Show success message and navigate to login
         setError(''); // Clear any previous errors
-        // You can add a success state here if needed
         navigate('/login', { 
           state: { 
             message: 'Account created successfully! Please check your email and click the confirmation link before logging in.' 
@@ -111,6 +119,7 @@ const SignUp = () => {
         });
       }
     } catch (error) {
+      console.error('Registration error:', error);
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);

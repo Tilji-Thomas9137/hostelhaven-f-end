@@ -5,6 +5,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { complaintSchema, leaveRequestSchema, profileUpdateSchema } from '../../lib/validation';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { profileUtils } from '../../lib/supabaseUtils';
+import StudentProfileForm from '../StudentProfileForm';
+import StudentRoomRequest from './StudentRoomRequest';
 import { 
   Building2, 
   Users, 
@@ -26,7 +29,8 @@ import {
   Plus,
   Search,
   Filter,
-  Download
+  Download,
+  UserCheck
 } from 'lucide-react';
 
 const StudentDashboard = () => {
@@ -34,6 +38,14 @@ const StudentDashboard = () => {
   const { showNotification } = useNotification();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [dataLoading, setDataLoading] = useState({
+    profile: true,
+    room: true,
+    payments: true,
+    complaints: true,
+    leave: true
+  });
   const [roomDetails, setRoomDetails] = useState(null);
   const [payments, setPayments] = useState([]);
   const [complaints, setComplaints] = useState([]);
@@ -53,6 +65,14 @@ const StudentDashboard = () => {
   const [leaveSearch, setLeaveSearch] = useState('');
   const [profileForm, setProfileForm] = useState({ fullName: '', phone: '' });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [error, setError] = useState('');
+  const [studentProfile, setStudentProfile] = useState(null);
+  const [hasProfile, setHasProfile] = useState(null); // null = unknown, true/false = known
+  const [profileCompletion, setProfileCompletion] = useState(null); // null = loading
+  const [profileStatus, setProfileStatus] = useState(null); // null = loading
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [dataCache, setDataCache] = useState({});
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -64,15 +84,40 @@ const StudentDashboard = () => {
           return;
         }
 
-        // Fetch user profile from Supabase
+        // Try to load cached profile status first
+        const cacheKey = `profile_status_${session.user.id}`;
+        const cachedStatus = localStorage.getItem(cacheKey);
+        if (cachedStatus) {
+          try {
+            const { hasProfile: cachedHasProfile, profileStatus: cachedProfileStatus, profileCompletion: cachedProfileCompletion, timestamp } = JSON.parse(cachedStatus);
+            // Use cache if it's less than 5 minutes old
+            if (Date.now() - timestamp < 300000) {
+              setHasProfile(cachedHasProfile);
+              setProfileStatus(cachedProfileStatus);
+              setProfileCompletion(cachedProfileCompletion);
+            }
+          } catch (e) {
+            // Invalid cache, ignore
+          }
+        }
+
+        // Fetch user profile from Supabase with avatar_url from user_profiles
         const { data: userProfile, error: profileError } = await supabase
           .from('users')
-          .select('*')
+          .select(`
+            *,
+            user_profiles(avatar_url)
+          `)
           .eq('email', session.user.email)
           .single();
 
         if (profileError) {
           console.error('Error fetching user profile:', profileError);
+          // If table doesn't exist, show a message to the user
+          if (profileError.message?.includes('relation') && profileError.message?.includes('does not exist')) {
+            setError('Database tables are not set up yet. Please contact the administrator.');
+            return;
+          }
           throw profileError;
         }
 
@@ -81,16 +126,25 @@ const StudentDashboard = () => {
           fullName: userProfile.full_name || '', 
           phone: userProfile.phone || '' 
         });
+        
+        // Show dashboard immediately after user data is loaded
+        setIsLoading(false);
+        setIsInitialLoad(false);
           
-        // Fetch all dashboard data
-        fetchRoomDetails();
-        fetchPayments();
-        fetchComplaints();
-        fetchLeaveRequests();
+        // Fetch all dashboard data in parallel for better performance (non-blocking)
+        Promise.allSettled([
+          fetchStudentProfile(),
+          fetchRoomDetails(),
+          fetchPayments(),
+          fetchComplaints(),
+          fetchLeaveRequests()
+        ]).catch(error => {
+          console.error('Error fetching dashboard data:', error);
+        });
       } catch (error) {
         console.error('Error fetching user data:', error);
-      } finally {
         setIsLoading(false);
+        setIsInitialLoad(false);
       }
     };
 
@@ -112,63 +166,53 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Get user's room_id from their profile
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('room_id, hostel_id')
-        .eq('email', session.user.email)
+      // Single optimized query to get room details with hostel and roommates
+      const { data: roomData, error: roomError } = await supabase
+        .from('rooms')
+        .select(`
+          *,
+          hostels(name, address, city, phone),
+          users!rooms_room_id_fkey(id, full_name, email)
+        `)
+        .eq('users.email', session.user.email)
         .single();
 
-      if (userProfile?.room_id) {
-        // Fetch room details with hostel information
-        const { data: roomData, error: roomError } = await supabase
-          .from('rooms')
-          .select(`
-            *,
-            hostel:hostels(
-              name,
-              address,
-              city,
-              phone
-            )
-          `)
-          .eq('id', userProfile.room_id)
-          .single();
-
-        if (roomError) {
-          console.error('Error fetching room details:', roomError);
+      if (roomError) {
+        console.error('Error fetching room details:', roomError);
+        // If table doesn't exist, just set null
+        if (roomError.message?.includes('relation') && roomError.message?.includes('does not exist')) {
+          setRoomDetails(null);
           return;
         }
+        return;
+      }
 
-        // Get roommates
-        const { data: roommates } = await supabase
-          .from('users')
-          .select('id, full_name, email')
-          .eq('room_id', userProfile.room_id)
-          .neq('email', session.user.email);
-
-        if (roomData) {
-          setRoomDetails({
-            id: roomData.id,
-            roomNumber: roomData.room_number,
-            floor: roomData.floor,
-            roomType: roomData.room_type,
-            capacity: roomData.capacity,
-            occupied: roomData.occupied,
-            price: roomData.price,
-            status: roomData.status,
-            hostel: {
-              name: roomData.hostel?.name || 'N/A',
-              address: roomData.hostel?.address || 'N/A',
-              city: roomData.hostel?.city || 'N/A',
-              phone: roomData.hostel?.phone || 'N/A'
-            },
-            roommates: roommates || []
-          });
-        }
+      if (roomData) {
+        // Filter out current user from roommates
+        const roommates = roomData.users?.filter(roommate => roommate.email !== session.user.email) || [];
+        
+        setRoomDetails({
+          id: roomData.id,
+          roomNumber: roomData.room_number,
+          floor: roomData.floor,
+          roomType: roomData.room_type,
+          capacity: roomData.capacity,
+          occupied: roomData.occupied,
+          price: roomData.price,
+          status: roomData.status,
+          hostel: {
+            name: roomData.hostels?.name || 'N/A',
+            address: roomData.hostels?.address || 'N/A',
+            city: roomData.hostels?.city || 'N/A',
+            phone: roomData.hostels?.phone || 'N/A'
+          },
+          roommates: roommates
+        });
       }
     } catch (error) {
       console.error('Error fetching room details:', error);
+    } finally {
+      setDataLoading(prev => ({ ...prev, room: false }));
     }
   };
 
@@ -187,6 +231,11 @@ const StudentDashboard = () => {
 
       if (paymentsError) {
         console.error('Error fetching payments:', paymentsError);
+        // If table doesn't exist, just set empty array
+        if (paymentsError.message?.includes('relation') && paymentsError.message?.includes('does not exist')) {
+          setPayments([]);
+          return;
+        }
         return;
       }
 
@@ -200,6 +249,8 @@ const StudentDashboard = () => {
       })));
     } catch (error) {
       console.error('Error fetching payments:', error);
+    } finally {
+      setDataLoading(prev => ({ ...prev, payments: false }));
     }
   };
 
@@ -226,6 +277,11 @@ const StudentDashboard = () => {
 
       if (complaintsError) {
         console.error('Error fetching complaints:', complaintsError);
+        // If table doesn't exist, just set empty array
+        if (complaintsError.message?.includes('relation') && complaintsError.message?.includes('does not exist')) {
+          setComplaints([]);
+          return;
+        }
         return;
       }
 
@@ -241,6 +297,8 @@ const StudentDashboard = () => {
       })));
     } catch (error) {
       console.error('Error fetching complaints:', error);
+    } finally {
+      setDataLoading(prev => ({ ...prev, complaints: false }));
     }
   };
 
@@ -264,6 +322,11 @@ const StudentDashboard = () => {
 
       if (leaveError) {
         console.error('Error fetching leave requests:', leaveError);
+        // If table doesn't exist, just set empty array
+        if (leaveError.message?.includes('relation') && leaveError.message?.includes('does not exist')) {
+          setLeaveRequests([]);
+          return;
+        }
         return;
       }
 
@@ -279,7 +342,149 @@ const StudentDashboard = () => {
       })));
     } catch (error) {
       console.error('Error fetching leave requests:', error);
+    } finally {
+      setDataLoading(prev => ({ ...prev, leave: false }));
     }
+  };
+
+  const fetchStudentProfile = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // Check cache first
+      const cacheKey = `profile_${session.user.id}`;
+      if (dataCache[cacheKey] && Date.now() - dataCache[cacheKey].timestamp < 30000) { // 30 second cache
+        const cachedData = dataCache[cacheKey].data;
+        setHasProfile(true);
+        setStudentProfile(cachedData);
+        setProfileCompletion(cachedData.completion);
+        setProfileStatus(cachedData.status);
+        setDataLoading(prev => ({ ...prev, profile: false }));
+        return;
+      }
+
+      // Single optimized query to get profile with completion data
+      const { data: profileData, error: profileError } = await supabase
+        .from('user_profiles')
+        .select(`
+          *,
+          users(full_name, email, phone),
+          rooms(room_number, floor, room_type)
+        `)
+        .eq('user_id', session.user.id)
+        .single();
+      
+      if (profileError) {
+        console.error('Error fetching student profile:', profileError);
+        setHasProfile(false);
+        return;
+      }
+
+      if (profileData) {
+        setHasProfile(true);
+        setStudentProfile(profileData);
+
+        // Calculate completion status directly from profile data
+        const requiredFields = [
+          'admission_number', 'course', 'batch_year', 'date_of_birth', 'gender',
+          'address', 'city', 'state', 'country', 'emergency_contact_name',
+          'emergency_contact_phone', 'parent_name', 'parent_phone', 'parent_email',
+          'aadhar_number', 'blood_group'
+        ];
+
+        const missingFields = requiredFields.filter(field => !profileData[field] || profileData[field] === '');
+        const completion = Math.round(((requiredFields.length - missingFields.length) / requiredFields.length) * 100);
+        
+        // Determine status based on completion
+        let status = profileData.status || 'incomplete';
+        if (completion === 100 && status === 'incomplete') {
+          status = 'complete';
+        }
+
+        setProfileCompletion(completion);
+        setProfileStatus(status);
+
+        // Cache the data in memory
+        setDataCache(prev => ({
+          ...prev,
+          [cacheKey]: {
+            data: { ...profileData, completion, status },
+            timestamp: Date.now()
+          }
+        }));
+
+        // Cache the profile status in localStorage for faster reloads
+        const statusCacheKey = `profile_status_${session.user.id}`;
+        localStorage.setItem(statusCacheKey, JSON.stringify({
+          hasProfile: true,
+          profileStatus: status,
+          profileCompletion: completion,
+          timestamp: Date.now()
+        }));
+      } else {
+        setHasProfile(false);
+        // Cache the no profile status
+        const statusCacheKey = `profile_status_${session.user.id}`;
+        localStorage.setItem(statusCacheKey, JSON.stringify({
+          hasProfile: false,
+          profileStatus: 'incomplete',
+          profileCompletion: 0,
+          timestamp: Date.now()
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching student profile:', error);
+      setHasProfile(false);
+    } finally {
+      setDataLoading(prev => ({ ...prev, profile: false }));
+    }
+  };
+
+  const handleProfileSuccess = async (profileData) => {
+    setStudentProfile(profileData);
+    setHasProfile(true);
+    setShowProfileForm(false);
+    setIsEditingProfile(false);
+    setActiveTab('overview');
+    
+    // Clear cache and refresh profile data
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const cacheKey = `profile_${session.user.id}`;
+      const statusCacheKey = `profile_status_${session.user.id}`;
+      
+      // Clear memory cache
+      setDataCache(prev => {
+        const newCache = { ...prev };
+        delete newCache[cacheKey];
+        return newCache;
+      });
+      
+      // Clear localStorage cache
+      localStorage.removeItem(statusCacheKey);
+    }
+    
+    fetchStudentProfile(); // Refresh profile data
+    showNotification('Profile saved successfully!', 'success');
+  };
+
+  const handleEditProfile = () => {
+    setIsEditingProfile(true);
+    setShowProfileForm(true);
+    setActiveTab('student-profile');
+  };
+
+  const handleCreateProfile = () => {
+    setIsEditingProfile(false);
+    setShowProfileForm(true);
+    setActiveTab('student-profile');
+  };
+
+  const handleCancelProfile = () => {
+    setShowProfileForm(false);
+    setIsEditingProfile(false);
+    setActiveTab('overview');
   };
 
   const handleLogout = async () => {
@@ -307,6 +512,26 @@ const StudentDashboard = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-amber-100 p-8 text-center">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-semibold text-slate-800 mb-4">Setup Required</h2>
+          <p className="text-slate-600 mb-6">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full bg-amber-600 text-white px-4 py-3 rounded-xl hover:bg-amber-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     navigate('/login');
     return null;
@@ -314,11 +539,12 @@ const StudentDashboard = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
-    { id: 'room', label: 'Room Details', icon: Building2 },
+    { id: 'student-profile', label: 'Student Profile', icon: User },
+    { id: 'room-allocation', label: 'Room Allocation', icon: UserCheck },
     { id: 'payments', label: 'Payments', icon: CreditCard },
     { id: 'complaints', label: 'Complaints', icon: AlertCircle },
     { id: 'leave', label: 'Leave Requests', icon: Calendar },
-    { id: 'profile', label: 'Profile', icon: Settings }
+    { id: 'profile', label: 'Account Settings', icon: Settings }
   ];
 
   const renderOverview = () => {
@@ -326,72 +552,206 @@ const StudentDashboard = () => {
     const activeComplaints = complaints.filter(c => c.status === 'pending' || c.status === 'in_progress').length;
     const totalLeaveRequests = leaveRequests.length;
 
+    // Check if profile is incomplete and restrict access
+    const isProfileIncomplete = hasProfile === false || profileStatus === 'incomplete';
+    const isProfileLoading = hasProfile === null || profileStatus === null;
+
     return (
       <div className="space-y-8">
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        {/* Profile Completion Alert */}
+        {isProfileLoading && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6">
             <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-                <Building2 className="w-6 h-6" />
+              <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
               </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-slate-800">Loading Profile Status</h3>
+                <p className="text-slate-600">Please wait while we check your profile completion status...</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {hasProfile === false && (
+          <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-2xl p-6">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-orange-600 rounded-xl flex items-center justify-center">
+                <AlertCircle className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-slate-800">⚠️ Profile Required</h3>
+                <p className="text-slate-600">You must complete your student profile before accessing hostel services.</p>
+              </div>
+              <button
+                onClick={handleCreateProfile}
+                className="px-6 py-3 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-xl hover:from-red-700 hover:to-orange-700 transition-all font-medium"
+              >
+                Create Profile
+              </button>
+            </div>
+          </div>
+        )}
+
+        {hasProfile === true && profileStatus === 'incomplete' && (
+          <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-2xl p-6">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-orange-600 rounded-xl flex items-center justify-center">
+                <AlertCircle className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-slate-800">⚠️ Profile Incomplete ({profileCompletion}%)</h3>
+                <p className="text-slate-600">Complete your profile to access all hostel features and services.</p>
+              </div>
+              <button
+                onClick={handleEditProfile}
+                className="px-6 py-3 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-xl hover:from-red-700 hover:to-orange-700 transition-all font-medium"
+              >
+                Complete Profile
+              </button>
+            </div>
+          </div>
+        )}
+
+        {hasProfile === true && profileStatus === 'pending_review' && (
+          <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-2xl p-6">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-yellow-500 to-amber-600 rounded-xl flex items-center justify-center">
+                <Clock className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-slate-800">⏳ Profile Under Review</h3>
+                <p className="text-slate-600">Your profile is being reviewed by administration. You'll be notified once approved.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Stats */}
+        {isProfileIncomplete && !isProfileLoading && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
+            <div className="flex items-center space-x-3">
+              <AlertCircle className="w-6 h-6 text-red-600" />
               <div>
+                <h3 className="text-lg font-semibold text-red-800">Access Restricted</h3>
+                <p className="text-red-600">Complete your profile to access room details, payments, complaints, and leave requests.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading indicator for data */}
+        {isInitialLoad && (
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+            <div className="flex items-center space-x-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <div>
+                <h3 className="text-lg font-semibold text-blue-800">Loading Dashboard Data</h3>
+                <p className="text-blue-600">Please wait while we fetch your information...</p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+            <div className="flex items-center space-x-4">
+              <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg">
+                <Building2 className="w-7 h-7" />
+              </div>
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold text-slate-800">Room Assignment</h3>
-                <p className="text-2xl font-bold text-slate-900">{roomDetails?.roomNumber || 'Not Assigned'}</p>
-                {roomDetails && (
-                  <p className="text-sm text-slate-600">Floor {roomDetails.floor} • {roomDetails.roomType}</p>
+                {dataLoading.room ? (
+                  <div className="animate-pulse">
+                    <div className="h-8 bg-slate-200 rounded w-24 mb-2"></div>
+                    <div className="h-4 bg-slate-200 rounded w-32"></div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-900">{roomDetails?.roomNumber || 'Not Assigned'}</p>
+                    {roomDetails && (
+                      <p className="text-sm text-slate-600">Floor {roomDetails.floor} • {roomDetails.roomType}</p>
+                    )}
+                  </>
                 )}
               </div>
             </div>
           </div>
           
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
             <div className="flex items-center space-x-4">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                pendingPayments > 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${
+                pendingPayments > 0 ? 'bg-gradient-to-br from-red-500 to-red-600 text-white' : 'bg-gradient-to-br from-green-500 to-green-600 text-white'
               }`}>
-                <CreditCard className="w-6 h-6" />
+                <CreditCard className="w-7 h-7" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold text-slate-800">Payment Status</h3>
-                <p className={`text-2xl font-bold ${pendingPayments > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {pendingPayments > 0 ? `${pendingPayments} Pending` : 'Up to Date'}
-                </p>
-                <p className="text-sm text-slate-600">
-                  {pendingPayments > 0 ? 'Outstanding payments' : 'All payments current'}
-                </p>
+                {dataLoading.payments ? (
+                  <div className="animate-pulse">
+                    <div className="h-8 bg-slate-200 rounded w-24 mb-2"></div>
+                    <div className="h-4 bg-slate-200 rounded w-32"></div>
+                  </div>
+                ) : (
+                  <>
+                    <p className={`text-2xl font-bold ${pendingPayments > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {pendingPayments > 0 ? `${pendingPayments} Pending` : 'Up to Date'}
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      {pendingPayments > 0 ? 'Outstanding payments' : 'All payments current'}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
           
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
             <div className="flex items-center space-x-4">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                activeComplaints > 0 ? 'bg-yellow-100 text-yellow-600' : 'bg-green-100 text-green-600'
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${
+                activeComplaints > 0 ? 'bg-gradient-to-br from-yellow-500 to-orange-500 text-white' : 'bg-gradient-to-br from-green-500 to-green-600 text-white'
               }`}>
-                <AlertCircle className="w-6 h-6" />
+                <AlertCircle className="w-7 h-7" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold text-slate-800">Active Complaints</h3>
-                <p className="text-2xl font-bold text-slate-900">{activeComplaints}</p>
-                <p className="text-sm text-slate-600">
-                  {activeComplaints > 0 ? 'Issues pending resolution' : 'No active issues'}
-                </p>
+                {dataLoading.complaints ? (
+                  <div className="animate-pulse">
+                    <div className="h-8 bg-slate-200 rounded w-8 mb-2"></div>
+                    <div className="h-4 bg-slate-200 rounded w-32"></div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-900">{activeComplaints}</p>
+                    <p className="text-sm text-slate-600">
+                      {activeComplaints > 0 ? 'Issues pending resolution' : 'No active issues'}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
           
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
             <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
-                <Calendar className="w-6 h-6" />
+              <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-xl flex items-center justify-center shadow-lg">
+                <Calendar className="w-7 h-7" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold text-slate-800">Leave Requests</h3>
-                <p className="text-2xl font-bold text-slate-900">{totalLeaveRequests}</p>
-                <p className="text-sm text-slate-600">
-                  {totalLeaveRequests > 0 ? 'Total requests submitted' : 'No requests yet'}
-                </p>
+                {dataLoading.leave ? (
+                  <div className="animate-pulse">
+                    <div className="h-8 bg-slate-200 rounded w-8 mb-2"></div>
+                    <div className="h-4 bg-slate-200 rounded w-32"></div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-900">{totalLeaveRequests}</p>
+                    <p className="text-sm text-slate-600">
+                      {totalLeaveRequests > 0 ? 'Total requests submitted' : 'No requests yet'}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -491,100 +851,6 @@ const StudentDashboard = () => {
     );
   };
 
-  const renderRoomDetails = () => (
-    <div className="space-y-6">
-      {roomDetails ? (
-        <>
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-slate-800">Room Information</h2>
-              <button onClick={() => alert('Room assignments are managed by administration.')} className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-                <Edit className="w-4 h-4" />
-                <span>Edit</span>
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Room Number</label>
-                  <p className="text-lg font-semibold text-slate-800">{roomDetails.roomNumber}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Floor</label>
-                  <p className="text-lg font-semibold text-slate-800">{roomDetails.floor}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Room Type</label>
-                  <p className="text-lg font-semibold text-slate-800">{roomDetails.roomType}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Capacity</label>
-                  <p className="text-lg font-semibold text-slate-800">{roomDetails.capacity} persons</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Monthly Rent</label>
-                  <p className="text-lg font-semibold text-slate-800">${roomDetails.price}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Status</label>
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                    {roomDetails.status}
-                  </span>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Occupancy</label>
-                  <p className="text-lg font-semibold text-slate-800">{roomDetails.occupied}/{roomDetails.capacity}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Hostel Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div className="flex items-center space-x-3">
-                  <Building2 className="w-5 h-5 text-amber-600" />
-                  <div>
-                    <p className="font-medium text-slate-800">{roomDetails.hostel.name}</p>
-                    <p className="text-sm text-slate-600">{roomDetails.hostel.address}</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <MapPin className="w-5 h-5 text-amber-600" />
-                  <p className="text-slate-800">{roomDetails.hostel.city}</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="flex items-center space-x-3">
-                  <Phone className="w-5 h-5 text-amber-600" />
-                  <p className="text-slate-800">{roomDetails.hostel.phone}</p>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <Mail className="w-5 h-5 text-amber-600" />
-                  <p className="text-slate-800">contact@hostelhaven.com</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-8 text-center">
-          <Building2 className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">No Room Assigned</h3>
-          <p className="text-slate-600 mb-4">You haven't been assigned to a room yet. Please contact the hostel administration.</p>
-          <button onClick={() => { setActiveTab('complaints'); setShowComplaintModal(true); }} className="bg-amber-600 text-white px-6 py-3 rounded-xl hover:bg-amber-700 transition-colors">
-            Contact Administration
-          </button>
-        </div>
-      )}
-    </div>
-  );
 
   const renderPayments = () => (
     <div className="space-y-6">
@@ -635,18 +901,37 @@ const StudentDashboard = () => {
     </div>
   );
 
-  const renderComplaints = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800">My Complaints</h2>
-        <button 
-          onClick={() => setShowComplaintModal(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Complaint</span>
-        </button>
-      </div>
+  const renderComplaints = () => {
+    const isProfileIncomplete = hasProfile === false || profileStatus === 'incomplete';
+    const isProfileLoading = hasProfile === null || profileStatus === null;
+    
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-slate-800">My Complaints</h2>
+          <button 
+            onClick={() => {
+              if (isProfileLoading) {
+                showNotification('Please wait while we check your profile status', 'info');
+                return;
+              }
+              if (isProfileIncomplete) {
+                showNotification('Please complete your profile before submitting complaints', 'error');
+                return;
+              }
+              setShowComplaintModal(true);
+            }}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
+              isProfileLoading || isProfileIncomplete
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                : 'bg-amber-600 text-white hover:bg-amber-700'
+            }`}
+            disabled={isProfileLoading || isProfileIncomplete}
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Complaint</span>
+          </button>
+        </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <input
@@ -733,22 +1018,42 @@ const StudentDashboard = () => {
       </div>
     </div>
   );
+  };
 
-  const renderLeaveRequests = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-800">Outpass Requests</h2>
-          <p className="text-sm text-slate-600 mt-1">Manage your leave and outpass applications</p>
+  const renderLeaveRequests = () => {
+    const isProfileIncomplete = hasProfile === false || profileStatus === 'incomplete';
+    const isProfileLoading = hasProfile === null || profileStatus === null;
+    
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-800">Outpass Requests</h2>
+            <p className="text-sm text-slate-600 mt-1">Manage your leave and outpass applications</p>
+          </div>
+          <button 
+            onClick={() => {
+              if (isProfileLoading) {
+                showNotification('Please wait while we check your profile status', 'info');
+                return;
+              }
+              if (isProfileIncomplete) {
+                showNotification('Please complete your profile before submitting leave requests', 'error');
+                return;
+              }
+              setShowLeaveModal(true);
+            }}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
+              isProfileLoading || isProfileIncomplete
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                : 'bg-amber-600 text-white hover:bg-amber-700'
+            }`}
+            disabled={isProfileLoading || isProfileIncomplete}
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Outpass</span>
+          </button>
         </div>
-        <button 
-          onClick={() => setShowLeaveModal(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Outpass</span>
-        </button>
-      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <input
@@ -891,6 +1196,7 @@ const StudentDashboard = () => {
       </div>
     </div>
   );
+  };
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
@@ -935,21 +1241,251 @@ const StudentDashboard = () => {
     }
   };
 
+  const renderStudentProfile = () => {
+    if (showProfileForm) {
+      return (
+        <StudentProfileForm
+          onSuccess={handleProfileSuccess}
+          onCancel={handleCancelProfile}
+          initialData={isEditingProfile ? studentProfile : null}
+          isEdit={isEditingProfile}
+          showHeader={false}
+        />
+      );
+    }
+
+    if (!hasProfile) {
+      return (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-8 text-center">
+            <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <User className="w-10 h-10 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-4">Complete Your Student Profile</h2>
+            <p className="text-slate-600 mb-8 max-w-md mx-auto">
+              Create your student profile to access all hostel features, including room allocation, 
+              payment tracking, and administrative services.
+            </p>
+            <button
+              onClick={handleCreateProfile}
+              className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all font-medium"
+            >
+              Create Student Profile
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Profile Header */}
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-6">
+              <div className="relative group">
+                <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 via-purple-500 to-indigo-600 p-1 shadow-xl hover:shadow-2xl transition-all duration-300">
+                  <div className="w-full h-full rounded-full overflow-hidden bg-white p-1">
+                    {studentProfile?.avatar_url ? (
+                      <img 
+                        src={studentProfile.avatar_url} 
+                        alt="Profile" 
+                        className="w-full h-full object-cover rounded-full transition-all duration-300 group-hover:scale-110 group-hover:brightness-110" 
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center group-hover:from-blue-600 group-hover:to-purple-700 transition-all duration-300">
+                        <User className="w-10 h-10 text-white" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {/* Status indicator */}
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 border-2 border-white rounded-full flex items-center justify-center shadow-sm">
+                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                </div>
+                {/* Hover effect ring */}
+                <div className="absolute inset-0 rounded-full border-2 border-transparent group-hover:border-blue-300 transition-all duration-300"></div>
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800">{studentProfile?.users?.full_name || user.fullName}</h2>
+                <p className="text-slate-600">{studentProfile?.admission_number}</p>
+                <p className="text-sm text-slate-500">{studentProfile?.course} • Batch {studentProfile?.batch_year}</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <div className="text-right">
+                <div className="text-sm text-slate-500">Profile Completion</div>
+                <div className="text-lg font-semibold text-slate-800">
+                  {profileCompletion !== null ? `${profileCompletion}%` : 'Loading...'}
+                </div>
+              </div>
+              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center">
+                {profileCompletion !== null ? (
+                  <div 
+                    className="w-8 h-8 rounded-full border-4 border-slate-200"
+                    style={{
+                      background: `conic-gradient(from 0deg, #3b82f6 0deg, #3b82f6 ${profileCompletion * 3.6}deg, #e2e8f0 ${profileCompletion * 3.6}deg)`
+                    }}
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full border-4 border-slate-200 animate-pulse bg-slate-200" />
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                profileStatus === null 
+                  ? 'bg-slate-100 text-slate-600 animate-pulse' 
+                  : studentProfile?.profile_status === 'active' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-yellow-100 text-yellow-800'
+              }`}>
+                {profileStatus === null ? 'Loading...' : (studentProfile?.profile_status === 'active' ? 'Active' : 'Inactive')}
+              </span>
+              {studentProfile?.rooms && (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                  Room {studentProfile.rooms.room_number}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={handleEditProfile}
+              className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
+            >
+              <Edit className="w-4 h-4" />
+              <span>Edit Profile</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Profile Details */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Personal Information */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Personal Information</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-slate-600">Date of Birth</label>
+                <p className="text-slate-800">{studentProfile?.date_of_birth ? new Date(studentProfile.date_of_birth).toLocaleDateString() : 'Not provided'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Gender</label>
+                <p className="text-slate-800 capitalize">{studentProfile?.gender || 'Not provided'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Blood Group</label>
+                <p className="text-slate-800">{studentProfile?.blood_group || 'Not provided'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Aadhar Number</label>
+                <p className="text-slate-800">{studentProfile?.aadhar_number || 'Not provided'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Contact Information */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Contact Information</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-slate-600">Address</label>
+                <p className="text-slate-800">{studentProfile?.address || 'Not provided'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">City, State</label>
+                <p className="text-slate-800">{studentProfile?.city && studentProfile?.state ? `${studentProfile.city}, ${studentProfile.state}` : 'Not provided'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Country</label>
+                <p className="text-slate-800">{studentProfile?.country || 'Not provided'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Emergency Contact */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Emergency Contact</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-slate-600">Contact Name</label>
+                <p className="text-slate-800">{studentProfile?.emergency_contact_name || 'Not provided'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Contact Phone</label>
+                <p className="text-slate-800">{studentProfile?.emergency_contact_phone || 'Not provided'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Parent Information */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">Parent/Guardian</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-slate-600">Name</label>
+                <p className="text-slate-800">{studentProfile?.parent_name || 'Not provided'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Phone</label>
+                <p className="text-slate-800">{studentProfile?.parent_phone || 'Not provided'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Email</label>
+                <p className="text-slate-800">{studentProfile?.parent_email || 'Not provided'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bio */}
+        {studentProfile?.bio && (
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">About</h3>
+            <p className="text-slate-700">{studentProfile.bio}</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderProfile = () => (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-4">Account</h2>
-        <div className="flex items-center space-x-4 mb-4">
-          <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-r from-amber-500 to-orange-500 flex items-center justify-center">
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-              <User className="w-8 h-8 text-white" />
-            )}
+        <h2 className="text-xl font-semibold text-slate-800 mb-4">Account Settings</h2>
+        <div className="flex items-center space-x-6 mb-6">
+          <div className="relative group">
+            <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-1 shadow-xl hover:shadow-2xl transition-all duration-300">
+              <div className="w-full h-full rounded-full overflow-hidden bg-white p-1">
+                {user?.user_profiles?.avatar_url ? (
+                  <img 
+                    src={user.user_profiles.avatar_url} 
+                    alt="Profile" 
+                    className="w-full h-full object-cover rounded-full transition-all duration-300 group-hover:scale-110 group-hover:brightness-110" 
+                  />
+                ) : (
+                  <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center group-hover:from-amber-600 group-hover:to-orange-700 transition-all duration-300">
+                    <User className="w-10 h-10 text-white" />
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Edit overlay on hover */}
+            <div className="absolute inset-0 rounded-full bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center">
+              <div className="text-white text-xs font-medium bg-black bg-opacity-30 px-2 py-1 rounded-full">Edit</div>
+            </div>
+            {/* Hover effect ring */}
+            <div className="absolute inset-0 rounded-full border-2 border-transparent group-hover:border-amber-300 transition-all duration-300"></div>
           </div>
-          <div>
-            <div className="text-slate-800 font-semibold">{user.fullName}</div>
-            <div className="text-slate-500 text-sm">{user.email}</div>
+          <div className="flex-1">
+            <div className="text-slate-800 font-bold text-lg">{user.fullName}</div>
+            <div className="text-slate-600 text-sm font-medium">{user.email}</div>
+            <div className="flex items-center space-x-2 mt-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-slate-500">Online</span>
+            </div>
           </div>
         </div>
         <form onSubmit={handleSaveProfile} className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1802,8 +2338,10 @@ const StudentDashboard = () => {
     switch (activeTab) {
       case 'overview':
         return renderOverview();
-      case 'room':
-        return renderRoomDetails();
+      case 'student-profile':
+        return renderStudentProfile();
+      case 'room-allocation':
+        return <StudentRoomRequest />;
       case 'payments':
         return renderPayments();
       case 'complaints':
@@ -1812,7 +2350,7 @@ const StudentDashboard = () => {
         return renderLeaveRequests();
       case 'profile':
         return renderProfile();
-      default:
+default:
         return renderOverview();
     }
   };
@@ -1823,7 +2361,10 @@ const StudentDashboard = () => {
       <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40">
         {/* Logo */}
         <div className="p-6 border-b border-amber-200/50">
-          <Link to="/" className="flex items-center space-x-3">
+          <button 
+            onClick={() => setActiveTab('overview')} 
+            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+          >
             <div className="w-10 h-10 bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg flex items-center justify-center">
               <Building2 className="w-6 h-6 text-white" />
             </div>
@@ -1831,23 +2372,39 @@ const StudentDashboard = () => {
               <span className="text-xl font-bold text-slate-900">HostelHaven</span>
               <div className="text-xs text-slate-500">Student Portal</div>
             </div>
-          </Link>
+          </button>
         </div>
 
         {/* User Profile */}
         <div className="p-6 border-b border-amber-200/50">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-r from-amber-500 to-orange-500 flex items-center justify-center">
-              {user?.avatarUrl ? (
-                <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-6 h-6 text-white" />
-              )}
+          <div className="flex items-center space-x-4">
+            <div className="relative group">
+              <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-0.5 shadow-lg hover:shadow-xl transition-all duration-300">
+                <div className="w-full h-full rounded-full overflow-hidden bg-white p-0.5">
+                  {user?.user_profiles?.avatar_url ? (
+                    <img 
+                      src={user.user_profiles.avatar_url} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover rounded-full transition-all duration-300 group-hover:scale-105 group-hover:brightness-110" 
+                    />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center group-hover:from-amber-600 group-hover:to-orange-700 transition-all duration-300">
+                      <User className="w-8 h-8 text-white" />
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Online status indicator */}
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full flex items-center justify-center shadow-sm">
+                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              </div>
+              {/* Hover effect ring */}
+              <div className="absolute inset-0 rounded-full border-2 border-transparent group-hover:border-amber-300 transition-all duration-300"></div>
             </div>
-            <div>
-              <p className="font-medium text-slate-900">{user.fullName}</p>
-              <p className="text-sm text-slate-500">Student</p>
-              <p className="text-xs text-slate-400">{user.email}</p>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-slate-900 truncate">{user.fullName}</p>
+              <p className="text-sm text-slate-600 font-medium">Student</p>
+              <p className="text-xs text-slate-500 truncate">{user.email}</p>
             </div>
           </div>
         </div>

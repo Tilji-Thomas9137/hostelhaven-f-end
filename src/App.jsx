@@ -6,6 +6,7 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import StudentDashboard from './components/dashboard/StudentDashboard';
 import AdminDashboard from './components/dashboard/AdminDashboard';
+import OperationsDashboard from './components/dashboard/OperationsDashboard';
 import TestDashboard from './components/TestDashboard';
 import AuthCallback from './components/AuthCallback';
 import ForgotPassword from './components/ForgotPassword';
@@ -37,6 +38,7 @@ const AppContent = () => {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/student-dashboard" element={<StudentDashboard />} />
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
+        <Route path="/operations-dashboard" element={<OperationsDashboard />} />
         <Route path="/test" element={<TestDashboard />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/services" element={<ServicesPage />} />
@@ -48,7 +50,12 @@ const AppContent = () => {
 
 function App() {
   return (
-    <Router>
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true
+      }}
+    >
       <NotificationProvider>
         <AppContent />
       </NotificationProvider>
