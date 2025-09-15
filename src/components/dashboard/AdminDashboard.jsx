@@ -887,6 +887,30 @@ const AdminDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      // Re-validate the request status just before allocation to avoid stale state
+      try {
+        const precheck = await fetch(`http://localhost:3002/api/room-allocation/requests/${requestToAllocate.id}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          }
+        });
+        if (precheck.ok) {
+          const pre = await precheck.json();
+          const current = pre.data?.request;
+          if (!current || !['pending', 'waitlisted'].includes(current.status)) {
+            showNotification(`This request cannot be approved (current status: ${current?.status || 'unknown'}).`, 'error');
+            setShowRoomAllocationModal(false);
+            setRequestToAllocate(null);
+            setSelectedRoomId('');
+            await fetchRoomsDashboardData();
+            return;
+          }
+        }
+      } catch (_) {
+        // Ignore precheck errors; the server will validate again
+      }
+
       const response = await fetch(`http://localhost:3002/api/room-allocation/requests/${requestToAllocate.id}/approve`, {
         method: 'PUT',
         headers: {
@@ -920,6 +944,55 @@ const AdminDashboard = () => {
     }
   };
 
+  // View allocation details modal state
+  const [showAllocationModal, setShowAllocationModal] = useState(false);
+  const [activeAllocation, setActiveAllocation] = useState(null);
+
+  const handleViewAllocation = (allocation) => {
+    setActiveAllocation(allocation);
+    setShowAllocationModal(true);
+  };
+
+  const handleCloseAllocationModal = () => {
+    setShowAllocationModal(false);
+    setActiveAllocation(null);
+  };
+
+  const handleDeallocate = async (allocation) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const confirm = window.confirm(`Deallocate room ${allocation.rooms?.room_number || ''} from ${allocation.users?.full_name || 'student'}?`);
+      if (!confirm) return;
+
+      const response = await fetch(`http://localhost:3002/api/room-allocations/${allocation.id}/deallocate`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ end_date: new Date().toISOString().slice(0, 10) })
+      });
+
+      if (response.ok) {
+        await fetchRoomsDashboardData();
+        showNotification('Room deallocated successfully', 'success');
+        setShowAllocationModal(false);
+      } else {
+        let msg = 'Failed to deallocate room';
+        try {
+          const err = await response.json();
+          msg = err.message || msg;
+        } catch (_) {}
+        showNotification(msg, 'error');
+      }
+    } catch (error) {
+      console.error('Error deallocating room:', error);
+      showNotification('Failed to deallocate room', 'error');
+    }
+  };
+
   const fetchStudents = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -927,6 +1000,7 @@ const AdminDashboard = () => {
 
       const params = new URLSearchParams();
       params.set('limit', '20');
+      params.set('role', 'student');
       if (studentsSearch.trim()) params.set('search', studentsSearch.trim());
 
       const response = await fetch(`http://localhost:3002/api/admin/users?${params.toString()}`, {
@@ -939,22 +1013,34 @@ const AdminDashboard = () => {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
-          // Filter out admin users from the display
-          const filteredUsers = (result.data.students || []).filter(user => 
-            user.role !== 'admin'
-          );
-          setStudents(filteredUsers);
+          // Only students are requested from backend; no further filtering required
+          const onlyStudents = (result.data.students || []).filter(user => user.role === 'student');
+          setStudents(onlyStudents);
         } else {
           console.error('API Error:', result.message);
           showNotification(result.message || 'Failed to fetch users', 'error');
           setStudents([]);
         }
       } else {
-        let errorMessage = 'Failed to fetch users';
+        // Handle auth errors explicitly
+        if (response.status === 401 || response.status === 403) {
+          showNotification('Your session has expired. Please log in again.', 'error');
+          setStudents([]);
+          return;
+        }
+
+        let errorMessage = `Failed to fetch users`;
         try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorMessage;
-          console.error('HTTP Error:', errorData);
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errorData = await response.json();
+            errorMessage = errorData.message || errorData.error || errorMessage;
+            console.error('HTTP Error:', errorData);
+          } else {
+            const errorText = await response.text();
+            errorMessage = errorText || `HTTP ${response.status}: ${response.statusText}`;
+            console.error('HTTP Error (text):', response.status, response.statusText, errorText);
+          }
         } catch (e) {
           console.error('HTTP Error:', response.status, response.statusText);
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
@@ -964,7 +1050,7 @@ const AdminDashboard = () => {
       }
     } catch (error) {
       console.error('Error fetching students:', error);
-      showNotification('Network error while fetching users', 'error');
+      showNotification(error?.message ? `Network error: ${error.message}` : 'Network error while fetching users', 'error');
       setStudents([]);
     }
   };
@@ -1818,15 +1904,7 @@ const AdminDashboard = () => {
         }
         break;
         
-      case 'pincode':
-        if (!value.trim()) {
-          errors.pincode = 'Pincode is required';
-        } else if (!/^\d{6}$/.test(value.trim())) {
-          errors.pincode = 'Pincode must be exactly 6 digits';
-        } else {
-          delete errors.pincode;
-        }
-        break;
+      // duplicate 'pincode' case removed (logic handled above)
         
       default:
         break;
@@ -3484,11 +3562,25 @@ const AdminDashboard = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
-                      <button className="text-red-600 hover:text-red-700">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <button className="text-amber-600 hover:text-amber-700">
+                      <button 
+                        onClick={() => handleViewAllocation(allocation)}
+                        className="group relative inline-flex items-center justify-center w-8 h-8 bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-700 rounded-lg transition-all duration-200 hover:scale-105"
+                        title="View Allocation"
+                      >
                         <Eye className="w-4 h-4" />
+                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                          View Details
+                        </div>
+                      </button>
+                      <button 
+                        onClick={() => handleDeallocate(allocation)}
+                        className="group relative inline-flex items-center justify-center w-8 h-8 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 rounded-lg transition-all duration-200 hover:scale-105"
+                        title="Deallocate"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                          Deallocate
+                        </div>
                       </button>
                     </div>
                   </td>
@@ -3503,6 +3595,65 @@ const AdminDashboard = () => {
           </table>
         </div>
       </div>
+
+      {/* Allocation Details Modal */}
+      {showAllocationModal && activeAllocation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg mx-4 relative">
+            <button
+              onClick={handleCloseAllocationModal}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <h3 className="text-xl font-semibold text-slate-800 mb-4 pr-8">Allocation Details</h3>
+
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-sm font-medium text-slate-700 mb-1">Student</h4>
+                <p className="text-slate-900">{activeAllocation.users?.full_name || 'N/A'}</p>
+                <p className="text-slate-600 text-sm">{activeAllocation.users?.email || ''}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="text-sm font-medium text-slate-700 mb-1">Room</h4>
+                  <p className="text-slate-900">{activeAllocation.rooms?.room_number || 'N/A'}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-slate-700 mb-1">Floor</h4>
+                  <p className="text-slate-900">{activeAllocation.rooms?.floor || 'N/A'}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-slate-700 mb-1">Type</h4>
+                  <p className="text-slate-900 capitalize">{activeAllocation.rooms?.room_type || 'N/A'}</p>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-slate-700 mb-1">Allocated On</h4>
+                  <p className="text-slate-900">{new Date(activeAllocation.created_at).toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  onClick={handleCloseAllocationModal}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => handleDeallocate(activeAllocation)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Deallocate
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -3791,8 +3942,8 @@ const AdminDashboard = () => {
               <Users className="w-6 h-6 text-blue-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Users</p>
-              <p className="text-2xl font-bold text-gray-900">{students.length}</p>
+              <p className="text-sm font-medium text-gray-600">Total Users </p>
+              <p className="text-2xl font-bold text-gray-900">{students.filter(s => s.role !== 'admin').length}</p>
             </div>
           </div>
         </div>
@@ -3842,12 +3993,12 @@ const AdminDashboard = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">User</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Role</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room Details</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student Details</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {students.map((student) => (
+              {students.filter((s) => s.role !== 'admin').map((student) => (
                 <tr key={student.id} className="hover:bg-slate-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -3919,42 +4070,24 @@ const AdminDashboard = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {student.roomNumber && student.roomNumber !== 'Not Assigned' ? (
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                          <p className="text-sm font-medium text-slate-900">Room {student.roomNumber}</p>
-                        </div>
-                        <div className="text-sm text-slate-600">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium mr-2">
-                            Floor {student.rooms?.floor || 'N/A'}
-                          </span>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium">
-                            {student.rooms?.room_type || 'Standard'}
-                          </span>
-                        </div>
-                        {student.rooms?.capacity && (
-                          <p className="text-xs text-slate-500">
-                            Capacity: {student.rooms.capacity} person{student.rooms.capacity > 1 ? 's' : ''}
-                          </p>
-                        )}
-                        {student.rooms?.rent_amount && (
-                          <p className="text-xs text-slate-500">
-                            Rent: ₹{student.rooms.rent_amount}/month
-                          </p>
-                        )}
-                        {student.hostelName && student.hostelName !== 'Not Assigned' && (
-                          <p className="text-xs text-slate-500 font-medium">
-                            Hostel: {student.hostelName}
-                          </p>
-                        )}
+                    <div className="space-y-1">
+                      <div className="text-sm text-slate-900 font-medium">
+                        {student.user_profiles?.course || 'Course N/A'}
                       </div>
-                    ) : (
-                      <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
-                        <span className="text-sm text-slate-400 italic">No room assigned</span>
+                      <div className="text-xs text-slate-600">
+                        {student.user_profiles?.batch_year ? `Batch ${student.user_profiles.batch_year}` : 'Batch N/A'}
                       </div>
-                    )}
+                      <div className="text-xs text-slate-600">
+                        ID: {student.user_profiles?.admission_number || 'N/A'}
+                      </div>
+                      {student.user_profiles?.status && (
+                        <div className="text-xs">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                            {student.user_profiles.status}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
@@ -3966,14 +4099,14 @@ const AdminDashboard = () => {
                         <Eye className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => updateUserStatus(student.id, student.status === 'available' ? 'unavailable' : 'available')}
+                        onClick={() => updateUserStatus(student.id, student.status === 'available' ? 'suspended' : 'available')}
                         disabled={isUpdatingStatus}
                         className={`p-1 rounded text-xs font-medium ${
                           student.status === 'available' 
-                            ? 'text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50' 
+                            ? 'text-red-600 hover:text-red-700 hover:bg-red-50' 
                             : 'text-green-600 hover:text-green-700 hover:bg-green-50'
                         }`}
-                        title={student.status === 'available' ? 'Mark Unavailable' : 'Mark Available'}
+                        title={student.status === 'available' ? 'Suspend User' : 'Activate User'}
                       >
                         {isUpdatingStatus ? '...' : (student.status === 'available' ? 'Suspend' : 'Activate')}
                       </button>
@@ -5354,6 +5487,7 @@ const AdminDashboard = () => {
                         {viewingUser.status || 'available'}
                       </span>
                     </div>
+                    {viewingUser.role !== 'admin' && (
                     <div className="flex space-x-2">
                       <button
                         onClick={() => updateUserStatus(viewingUser.id, 'available')}
@@ -5377,6 +5511,7 @@ const AdminDashboard = () => {
                         Suspend
                       </button>
                     </div>
+                    )}
                   </div>
                 </div>
               </div>

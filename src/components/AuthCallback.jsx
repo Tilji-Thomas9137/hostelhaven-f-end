@@ -30,13 +30,31 @@ const AuthCallback = () => {
       const backendUrl = import.meta.env?.VITE_BACKEND_URL || 'http://localhost:3002';
       
       try {
-        const response = await fetch(`${backendUrl}/api/auth/me`, {
+        // First attempt with current access token
+        let response = await fetch(`${backendUrl}/api/auth/me`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json'
           }
         });
+
+        // If unauthorized, try to refresh the session once and retry
+        if (response.status === 401) {
+          console.warn('Auth /me returned 401, attempting token refresh...');
+          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            console.error('Token refresh failed:', refreshError);
+          } else if (refreshed?.session?.access_token) {
+            response = await fetch(`${backendUrl}/api/auth/me`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${refreshed.session.access_token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+          }
+        }
 
         if (response.ok) {
           const result = await response.json();
