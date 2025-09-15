@@ -37,7 +37,8 @@ import {
   Eye,
   Trash2,
   UserCheck,
-  X
+  X,
+  Star
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -53,8 +54,95 @@ const AdminDashboard = () => {
   const [payments, setPayments] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [hostels, setHostels] = useState([]);
+  const [hostelRooms, setHostelRooms] = useState([]);
+  const [showHostelModal, setShowHostelModal] = useState(false);
   const [showRoomModal, setShowRoomModal] = useState(false);
+  const [editingHostel, setEditingHostel] = useState(null);
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [isLoadingActivity, setIsLoadingActivity] = useState(false);
+  const [hostelFormData, setHostelFormData] = useState({
+    name: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    contact_phone: '',
+    contact_email: '',
+    capacity: '',
+    amenities: [],
+    rules: [],
+    roomTypes: [
+      {
+        type: 'standard',
+        name: 'Standard',
+        capacity: 1,
+        rentAmount: 0,
+        amenities: []
+      },
+      {
+        type: 'deluxe',
+        name: 'Deluxe',
+        capacity: 2,
+        rentAmount: 0,
+        amenities: []
+      },
+      {
+        type: 'premium',
+        name: 'Premium',
+        capacity: 2,
+        rentAmount: 0,
+        amenities: []
+      },
+      {
+        type: 'suite',
+        name: 'Suite',
+        capacity: 4,
+        rentAmount: 0,
+        amenities: []
+      }
+    ]
+  });
+  const [formErrors, setFormErrors] = useState({});
+  const [isValidating, setIsValidating] = useState(false);
+  const [location, setLocation] = useState(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pincodeData, setPincodeData] = useState(null);
+  const [isLoadingPincode, setIsLoadingPincode] = useState(false);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [availableAmenities, setAvailableAmenities] = useState([
+    'WiFi', 'Air Conditioning', 'Hot Water', 'Study Table', 'Wardrobe', 
+    'Fan', 'Bed', 'Chair', 'Mirror', 'Power Outlets', 'Window', 'Balcony',
+    'TV', 'Refrigerator', 'Microwave', 'Coffee Maker', 'Safe', 'Iron',
+    'Hair Dryer', 'Towels', 'Toiletries', 'Room Service', 'Daily Cleaning'
+  ]);
+  const [newAmenity, setNewAmenity] = useState('');
+  const [amenityPricing, setAmenityPricing] = useState({
+    'WiFi': 500,
+    'Air Conditioning': 1000,
+    'Hot Water': 300,
+    'Study Table': 200,
+    'Wardrobe': 150,
+    'Fan': 100,
+    'Bed': 300,
+    'Chair': 100,
+    'Mirror': 50,
+    'Power Outlets': 100,
+    'Window': 200,
+    'Balcony': 800,
+    'TV': 400,
+    'Refrigerator': 600,
+    'Microwave': 300,
+    'Coffee Maker': 200,
+    'Safe': 150,
+    'Iron': 100,
+    'Hair Dryer': 100,
+    'Towels': 50,
+    'Toiletries': 100,
+    'Room Service': 500,
+    'Daily Cleaning': 300
+  });
   // Filters
   const [studentsSearch, setStudentsSearch] = useState('');
   const [paymentsStatusFilter, setPaymentsStatusFilter] = useState('');
@@ -80,12 +168,14 @@ const AdminDashboard = () => {
   const [roomFormData, setRoomFormData] = useState({
     room_number: '',
     floor: '',
-    room_type: 'standard',
+    room_type: '',
     capacity: '',
     price: '',
     amenities: []
   });
   const [roomFormErrors, setRoomFormErrors] = useState({});
+  const [availableRoomTypes, setAvailableRoomTypes] = useState([]);
+  const [selectedRoomTypeData, setSelectedRoomTypeData] = useState(null);
   const [roomFilters, setRoomFilters] = useState({
     status: '',
     room_type: '',
@@ -128,12 +218,14 @@ const AdminDashboard = () => {
           if (['admin', 'hostel_operations_assistant', 'warden'].includes(role)) {
             fetchDashboardStats();
             fetchStudents();
+            fetchHostels();
             fetchRooms();
             fetchComplaints();
             fetchPayments();
             fetchLeaveRequests();
             fetchAnalytics();
             fetchRoomsDashboardData();
+            fetchRecentActivity();
           } else {
             console.warn('User lacks admin privileges for full dashboard, role:', result.data.user.role);
             setUser({ ...result.data.user, isNotAdmin: true });
@@ -315,6 +407,7 @@ const AdminDashboard = () => {
 
       if (roomsRes.ok) {
         const roomsResult = await roomsRes.json();
+        console.log('Fetched rooms data:', roomsResult.data.rooms);
         setRoomsData(roomsResult.data.rooms || []);
       } else {
         setRoomsData([]);
@@ -345,17 +438,20 @@ const AdminDashboard = () => {
   const handleAddRoom = async (e) => {
     e.preventDefault();
     
-    // Validate all fields before submission
-    const fieldsToValidate = ['room_number', 'floor', 'capacity', 'price'];
-    let hasErrors = false;
-    
-    fieldsToValidate.forEach(field => {
-      validateField(field, roomFormData[field]);
-      if (roomFormErrors[field] || (field === 'room_number' && !roomFormData[field].trim()) || 
-          (field === 'capacity' && (!roomFormData[field] || roomFormData[field] < 1))) {
-        hasErrors = true;
-      }
-    });
+      // Validate all fields before submission
+      const fieldsToValidate = ['room_number', 'room_type', 'floor', 'capacity', 'price'];
+      let hasErrors = false;
+      
+      fieldsToValidate.forEach(field => {
+        validateRoomField(field, roomFormData[field]);
+        if (roomFormErrors[field] || 
+            (field === 'room_number' && !roomFormData[field].trim()) || 
+            (field === 'room_type' && !roomFormData[field]) ||
+            (field === 'capacity' && (!roomFormData[field] || roomFormData[field] < 1)) ||
+            (field === 'floor' && roomFormData[field] && (parseInt(roomFormData[field]) < 1 || parseInt(roomFormData[field]) > 8))) {
+          hasErrors = true;
+        }
+      });
     
     if (hasErrors) return;
 
@@ -364,38 +460,74 @@ const AdminDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      // Calculate the full price before sending to API
+      let calculatedPrice = null;
+      if (selectedRoomTypeData) {
+        const basePrice = selectedRoomTypeData.rentAmount || 0;
+        const amenitiesPrice = (selectedRoomTypeData.amenities || []).reduce((total, amenity) => 
+          total + (amenityPricing[amenity] || 0), 0);
+        calculatedPrice = basePrice + amenitiesPrice;
+        
+        console.log('Room Price Calculation:', {
+          roomNumber: roomFormData.room_number,
+          roomType: selectedRoomTypeData.name,
+          basePrice,
+          amenities: selectedRoomTypeData.amenities,
+          amenitiesPrice,
+          totalPrice: calculatedPrice,
+          amenityPricing: selectedRoomTypeData.amenities.map(amenity => ({
+            amenity,
+            price: amenityPricing[amenity] || 0
+          }))
+        });
+      }
+
+      const roomData = {
+        room_number: roomFormData.room_number,
+        floor: roomFormData.floor || null,
+        room_type: roomFormData.room_type,
+        capacity: parseInt(roomFormData.capacity),
+        price: calculatedPrice || (roomFormData.price ? parseFloat(roomFormData.price) : null),
+        amenities: roomFormData.amenities
+      };
+
+      console.log('Sending room data to API:', roomData);
+
       const response = await fetch('http://localhost:3002/api/room-allocation/rooms', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          room_number: roomFormData.room_number,
-          floor: roomFormData.floor || null,
-          room_type: roomFormData.room_type,
-          capacity: parseInt(roomFormData.capacity),
-          price: roomFormData.price ? parseFloat(roomFormData.price) : null,
-          amenities: roomFormData.amenities
-        })
+        body: JSON.stringify(roomData)
       });
 
       if (response.ok) {
+        const responseData = await response.json();
+        console.log('Room creation response:', responseData);
+        
         setShowAddRoomForm(false);
         setRoomFormData({
           room_number: '',
           floor: '',
-          room_type: 'standard',
+          room_type: '',
           capacity: '',
           price: '',
           amenities: []
         });
+        setSelectedRoomTypeData(null);
         setRoomFormErrors({});
         await fetchRoomsDashboardData();
-        showNotification('Room added successfully!', 'success');
+        showNotification(`Room added successfully! Price: ₹${calculatedPrice || 'N/A'}`, 'success');
       } else {
-        const error = await response.json();
-        showNotification(error.message || 'Failed to add room', 'error');
+        let errorMessage = 'Failed to add room';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
       }
     } catch (error) {
       console.error('Error adding room:', error);
@@ -412,11 +544,25 @@ const AdminDashboard = () => {
       [name]: value
     }));
     
+    // If room_type is changed, auto-populate other fields
+    if (name === 'room_type' && value) {
+      const roomTypeData = availableRoomTypes.find(rt => rt.type === value);
+      if (roomTypeData) {
+        setSelectedRoomTypeData(roomTypeData);
+        setRoomFormData(prev => ({
+          ...prev,
+          capacity: roomTypeData.capacity,
+          price: roomTypeData.rentAmount,
+          amenities: roomTypeData.amenities
+        }));
+      }
+    }
+    
     // Real-time validation
-    validateField(name, value);
+    validateRoomField(name, value);
   };
 
-  const validateField = (fieldName, value) => {
+  const validateRoomField = (fieldName, value) => {
     let error = '';
     
     switch (fieldName) {
@@ -427,14 +573,24 @@ const AdminDashboard = () => {
           error = 'Room number must be at least 2 characters';
         } else if (!/^[A-Za-z0-9\-\s]+$/.test(value.trim())) {
           error = 'Room number can only contain letters, numbers, hyphens, and spaces';
+        } else {
+          // Check if room number already exists
+          const existingRoom = rooms.find(room => 
+            room.room_number.toLowerCase() === value.trim().toLowerCase()
+          );
+          if (existingRoom) {
+            error = 'Room number already exists. Please choose a different number.';
+          }
         }
         break;
         
       case 'floor':
         if (value && (isNaN(value) || parseInt(value) < 0)) {
           error = 'Floor must be a positive number';
-        } else if (value && parseInt(value) > 50) {
-          error = 'Floor number seems too high (max 50)';
+        } else if (value && parseInt(value) > 8) {
+          error = 'Maximum 8 floors allowed';
+        } else if (value && parseInt(value) === 0) {
+          error = 'Floor 0 is not allowed';
         }
         break;
         
@@ -445,6 +601,12 @@ const AdminDashboard = () => {
           error = 'Capacity must be at least 1';
         } else if (parseInt(value) > 10) {
           error = 'Capacity seems too high (max 10)';
+        }
+        break;
+        
+      case 'room_type':
+        if (!value) {
+          error = 'Please select a room type';
         }
         break;
         
@@ -469,7 +631,7 @@ const AdminDashboard = () => {
   };
 
   const isFormValid = () => {
-    const requiredFields = ['room_number', 'capacity'];
+    const requiredFields = ['room_number', 'room_type', 'capacity'];
     const hasRequiredFields = requiredFields.every(field => 
       roomFormData[field] && roomFormData[field].toString().trim() !== ''
     );
@@ -554,8 +716,14 @@ const AdminDashboard = () => {
         await fetchRoomsDashboardData();
         showNotification('Room updated successfully!', 'success');
       } else {
-        const error = await response.json();
-        showNotification(error.message || 'Failed to update room', 'error');
+        let errorMessage = 'Failed to update room';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
       }
     } catch (error) {
       console.error('Error updating room:', error);
@@ -590,8 +758,14 @@ const AdminDashboard = () => {
           'success'
         );
       } else {
-        const error = await response.json();
-        showNotification(error.message || 'Failed to update room status', 'error');
+        let errorMessage = 'Failed to update room status';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
       }
     } catch (error) {
       console.error('Error updating room status:', error);
@@ -688,8 +862,14 @@ const AdminDashboard = () => {
         await fetchRoomsDashboardData();
         showNotification('Request cancelled successfully', 'success');
       } else {
-        const error = await response.json();
-        showNotification(error.message || 'Failed to cancel request', 'error');
+        let errorMessage = 'Failed to cancel request';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
       }
     } catch (error) {
       console.error('Error cancelling request:', error);
@@ -725,8 +905,14 @@ const AdminDashboard = () => {
         setRequestToAllocate(null);
         setSelectedRoomId('');
       } else {
-        const error = await response.json();
-        showNotification(error.message || 'Failed to allocate room', 'error');
+        let errorMessage = 'Failed to allocate room';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
       }
     } catch (error) {
       console.error('Error allocating room:', error);
@@ -743,7 +929,7 @@ const AdminDashboard = () => {
       params.set('limit', '20');
       if (studentsSearch.trim()) params.set('search', studentsSearch.trim());
 
-      const response = await fetch(`http://localhost:3002/api/admin/students?${params.toString()}`, {
+      const response = await fetch(`http://localhost:3002/api/admin/users?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -752,12 +938,33 @@ const AdminDashboard = () => {
 
       if (response.ok) {
         const result = await response.json();
-        setStudents(result.data.students || []);
+        if (result.success) {
+          // Filter out admin users from the display
+          const filteredUsers = (result.data.students || []).filter(user => 
+            user.role !== 'admin'
+          );
+          setStudents(filteredUsers);
+        } else {
+          console.error('API Error:', result.message);
+          showNotification(result.message || 'Failed to fetch users', 'error');
+          setStudents([]);
+        }
       } else {
+        let errorMessage = 'Failed to fetch users';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+          console.error('HTTP Error:', errorData);
+        } catch (e) {
+          console.error('HTTP Error:', response.status, response.statusText);
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
         setStudents([]);
       }
     } catch (error) {
       console.error('Error fetching students:', error);
+      showNotification('Network error while fetching users', 'error');
       setStudents([]);
     }
   };
@@ -819,6 +1026,513 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchHostels = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data: hostels, error } = await supabase
+        .from('hostels')
+        .select('*')
+        .order('name');
+
+      if (error) {
+        console.error('Error fetching hostels:', error);
+        setHostels([]);
+        return;
+      }
+
+      // Parse room_types JSON data for each hostel
+      const processedHostels = (hostels || []).map(hostel => {
+        let roomTypes = [
+          {
+            type: 'standard',
+            name: 'Standard',
+            capacity: 1,
+            rentAmount: 0,
+            amenities: []
+          },
+          {
+            type: 'deluxe',
+            name: 'Deluxe',
+            capacity: 2,
+            rentAmount: 0,
+            amenities: []
+          }
+        ];
+
+        if (hostel.room_types) {
+          try {
+            roomTypes = JSON.parse(hostel.room_types);
+          } catch (error) {
+            console.warn('Error parsing room_types for hostel:', hostel.name, error);
+            // Keep default roomTypes if parsing fails
+          }
+        }
+
+        return {
+          ...hostel,
+          roomTypes
+        };
+      });
+
+      setHostels(processedHostels);
+      
+      // Extract unique room types from all hostels
+      extractRoomTypesFromHostels(processedHostels);
+    } catch (error) {
+      console.error('Error fetching hostels:', error);
+      setHostels([]);
+    }
+  };
+
+  // Extract room types from hostels data
+  const extractRoomTypesFromHostels = (hostelsData) => {
+    const allRoomTypes = new Map();
+    
+    hostelsData.forEach(hostel => {
+      if (hostel.roomTypes && Array.isArray(hostel.roomTypes)) {
+        hostel.roomTypes.forEach(roomType => {
+          if (roomType.name && roomType.type) {
+            allRoomTypes.set(roomType.type, {
+              type: roomType.type,
+              name: roomType.name,
+              capacity: roomType.capacity || 1,
+              rentAmount: roomType.rentAmount || 0,
+              amenities: roomType.amenities || []
+            });
+          }
+        });
+      }
+    });
+    
+    setAvailableRoomTypes(Array.from(allRoomTypes.values()));
+  };
+
+  const fetchHostelRooms = async (hostelId) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`http://localhost:3002/api/admin/hostels/${hostelId}/rooms`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setHostelRooms(result.data.rooms || []);
+        } else {
+          showNotification(result.message || 'Failed to fetch rooms', 'error');
+          setHostelRooms([]);
+        }
+      } else {
+        let errorMessage = 'Failed to fetch rooms';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
+        setHostelRooms([]);
+      }
+    } catch (error) {
+      console.error('Error fetching hostel rooms:', error);
+      showNotification('Network error while fetching rooms', 'error');
+      setHostelRooms([]);
+    }
+  };
+
+  const fetchRecentActivity = async () => {
+    try {
+      setIsLoadingActivity(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // Fetch recent activities from multiple sources
+      const activities = [];
+
+      // Recent user registrations
+      const { data: recentUsers } = await supabase
+        .from('users')
+        .select('full_name, email, role, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentUsers) {
+        recentUsers.forEach(user => {
+          activities.push({
+            id: `user-${user.created_at}`,
+            type: 'user_registration',
+            title: 'New User Registered',
+            description: `${user.full_name} (${user.role}) joined the system`,
+            timestamp: user.created_at,
+            icon: '👤',
+            color: 'blue'
+          });
+        });
+      }
+
+      // Recent user profile updates
+      const { data: profileUpdates } = await supabase
+        .from('user_profiles')
+        .select('user_id, updated_at, users(full_name)')
+        .not('updated_at', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(3);
+
+      if (profileUpdates) {
+        profileUpdates.forEach(profile => {
+          activities.push({
+            id: `profile-${profile.updated_at}`,
+            type: 'profile_update',
+            title: 'Profile Updated',
+            description: `${profile.users?.full_name} updated their profile`,
+            timestamp: profile.updated_at,
+            icon: '✏️',
+            color: 'purple'
+          });
+        });
+      }
+
+      // Recent complaints
+      const { data: recentComplaints } = await supabase
+        .from('complaints')
+        .select('title, status, created_at, updated_at, user_id, users(full_name)')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentComplaints) {
+        recentComplaints.forEach(complaint => {
+          activities.push({
+            id: `complaint-${complaint.created_at}`,
+            type: 'complaint',
+            title: 'New Complaint',
+            description: `${complaint.title} by ${complaint.users?.full_name} - Status: ${complaint.status}`,
+            timestamp: complaint.created_at,
+            icon: '⚠️',
+            color: 'red'
+          });
+        });
+      }
+
+      // Recent complaint updates
+      const { data: complaintUpdates } = await supabase
+        .from('complaints')
+        .select('title, status, updated_at, users(full_name)')
+        .not('updated_at', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(3);
+
+      if (complaintUpdates) {
+        complaintUpdates.forEach(complaint => {
+          activities.push({
+            id: `complaint-update-${complaint.updated_at}`,
+            type: 'complaint_update',
+            title: 'Complaint Updated',
+            description: `${complaint.title} status changed to ${complaint.status}`,
+            timestamp: complaint.updated_at,
+            icon: '🔄',
+            color: 'orange'
+          });
+        });
+      }
+
+      // Recent payments
+      const { data: recentPayments } = await supabase
+        .from('payments')
+        .select('amount, status, created_at, updated_at, user_id, users(full_name)')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentPayments) {
+        recentPayments.forEach(payment => {
+          activities.push({
+            id: `payment-${payment.created_at}`,
+            type: 'payment',
+            title: 'Payment Processed',
+            description: `$${payment.amount} by ${payment.users?.full_name} - Status: ${payment.status}`,
+            timestamp: payment.created_at,
+            icon: '💳',
+            color: 'green'
+          });
+        });
+      }
+
+      // Recent leave requests
+      const { data: recentLeaves } = await supabase
+        .from('leave_requests')
+        .select('reason, status, created_at, updated_at, user_id, users(full_name)')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentLeaves) {
+        recentLeaves.forEach(leave => {
+          activities.push({
+            id: `leave-${leave.created_at}`,
+            type: 'leave_request',
+            title: 'Leave Request',
+            description: `${leave.reason} by ${leave.users?.full_name} - Status: ${leave.status}`,
+            timestamp: leave.created_at,
+            icon: '📅',
+            color: 'yellow'
+          });
+        });
+      }
+
+      // Recent leave request updates
+      const { data: leaveUpdates } = await supabase
+        .from('leave_requests')
+        .select('reason, status, updated_at, users(full_name)')
+        .not('updated_at', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(3);
+
+      if (leaveUpdates) {
+        leaveUpdates.forEach(leave => {
+          activities.push({
+            id: `leave-update-${leave.updated_at}`,
+            type: 'leave_update',
+            title: 'Leave Request Updated',
+            description: `${leave.reason} status changed to ${leave.status}`,
+            timestamp: leave.updated_at,
+            icon: '📝',
+            color: 'indigo'
+          });
+        });
+      }
+
+      // Recent room allocations
+      const { data: roomAllocations } = await supabase
+        .from('room_allocations')
+        .select('created_at, users(full_name), rooms(room_number)')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (roomAllocations) {
+        roomAllocations.forEach(allocation => {
+          activities.push({
+            id: `allocation-${allocation.created_at}`,
+            type: 'room_allocation',
+            title: 'Room Allocated',
+            description: `${allocation.users?.full_name} assigned to Room ${allocation.rooms?.room_number}`,
+            timestamp: allocation.created_at,
+            icon: '🏠',
+            color: 'teal'
+          });
+        });
+      }
+
+      // Recent room requests
+      const { data: roomRequests } = await supabase
+        .from('room_requests')
+        .select('created_at, status, users(full_name)')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (roomRequests) {
+        roomRequests.forEach(request => {
+          activities.push({
+            id: `room-request-${request.created_at}`,
+            type: 'room_request',
+            title: 'Room Request',
+            description: `${request.users?.full_name} requested a room - Status: ${request.status}`,
+            timestamp: request.created_at,
+            icon: '🔑',
+            color: 'cyan'
+          });
+        });
+      }
+
+      // Recent notifications
+      const { data: notifications } = await supabase
+        .from('notifications')
+        .select('title, message, created_at, user_id, users(full_name)')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (notifications) {
+        notifications.forEach(notification => {
+          activities.push({
+            id: `notification-${notification.created_at}`,
+            type: 'notification',
+            title: 'Notification Sent',
+            description: `${notification.title} to ${notification.users?.full_name}`,
+            timestamp: notification.created_at,
+            icon: '🔔',
+            color: 'pink'
+          });
+        });
+      }
+
+      // Recent hostel updates
+      const { data: hostelUpdates } = await supabase
+        .from('hostels')
+        .select('name, updated_at')
+        .not('updated_at', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (hostelUpdates) {
+        hostelUpdates.forEach(hostel => {
+          activities.push({
+            id: `hostel-update-${hostel.updated_at}`,
+            type: 'hostel_update',
+            title: 'Hostel Settings Updated',
+            description: `Hostel information was updated`,
+            timestamp: hostel.updated_at,
+            icon: '🏢',
+            color: 'amber'
+          });
+        });
+      }
+
+      // Recent room updates
+      const { data: roomUpdates } = await supabase
+        .from('rooms')
+        .select('room_number, status, updated_at')
+        .not('updated_at', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(3);
+
+      if (roomUpdates) {
+        roomUpdates.forEach(room => {
+          activities.push({
+            id: `room-update-${room.updated_at}`,
+            type: 'room_update',
+            title: 'Room Updated',
+            description: `Room ${room.room_number} status changed to ${room.status}`,
+            timestamp: room.updated_at,
+            icon: '🚪',
+            color: 'lime'
+          });
+        });
+      }
+
+      // Sort by timestamp and take the most recent 15
+      const sortedActivities = activities
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, 15);
+
+      setRecentActivity(sortedActivities);
+    } catch (error) {
+      console.error('Error fetching recent activity:', error);
+      setRecentActivity([]);
+    } finally {
+      setIsLoadingActivity(false);
+    }
+  };
+
+  const createHostel = async (hostelData) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data, error } = await supabase
+        .from('hostels')
+        .insert([hostelData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating hostel:', error);
+        showNotification(`Failed to create hostel: ${error.message}`, 'error');
+        return;
+      }
+
+      showNotification('Hostel created successfully', 'success');
+      fetchHostels();
+      setShowHostelModal(false);
+      setHostelFormData({
+        name: '',
+        address: '',
+        city: '',
+        state: '',
+        pincode: '',
+        contact_phone: '',
+        contact_email: '',
+        capacity: '',
+        amenities: [],
+        rules: [],
+        roomTypes: [
+          {
+            type: 'standard',
+            name: 'Standard',
+            capacity: 1,
+            rentAmount: 0,
+            amenities: []
+          },
+          {
+            type: 'deluxe',
+            name: 'Deluxe',
+            capacity: 2,
+            rentAmount: 0,
+            amenities: []
+          }
+        ]
+      });
+    } catch (error) {
+      console.error('Error creating hostel:', error);
+      showNotification('Network error while creating hostel', 'error');
+    }
+  };
+
+  const updateHostel = async (hostelId, hostelData) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data, error } = await supabase
+        .from('hostels')
+        .update(hostelData)
+        .eq('id', hostelId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating hostel:', error);
+        showNotification(`Failed to update hostel: ${error.message}`, 'error');
+        return;
+      }
+
+      showNotification('Hostel updated successfully', 'success');
+      fetchHostels();
+      setShowHostelModal(false);
+      setEditingHostel(null);
+    } catch (error) {
+      console.error('Error updating hostel:', error);
+      showNotification('Network error while updating hostel', 'error');
+    }
+  };
+
+  const deleteHostel = async (hostelId) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { error } = await supabase
+        .from('hostels')
+        .delete()
+        .eq('id', hostelId);
+
+      if (error) {
+        console.error('Error deleting hostel:', error);
+        showNotification(`Failed to delete hostel: ${error.message}`, 'error');
+        return;
+      }
+
+      showNotification('Hostel deleted successfully', 'success');
+      fetchHostels();
+    } catch (error) {
+      console.error('Error deleting hostel:', error);
+      showNotification('Network error while deleting hostel', 'error');
+    }
+  };
+
   const fetchUserDetails = async (userId) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -843,11 +1557,17 @@ const AdminDashboard = () => {
           showNotification('User data not found', 'error');
         }
       } else {
-        const errorData = await response.json();
         if (response.status === 404) {
           showNotification('User not found', 'error');
         } else {
-          showNotification(errorData.message || 'Failed to fetch user details', 'error');
+          let errorMessage = 'Failed to fetch user details';
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.message || errorMessage;
+          } catch (e) {
+            errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+          }
+          showNotification(errorMessage, 'error');
         }
       }
     } catch (error) {
@@ -886,8 +1606,14 @@ const AdminDashboard = () => {
           showNotification(result.message || 'Failed to update user status', 'error');
         }
       } else {
-        const errorData = await response.json();
-        showNotification(errorData.message || 'Failed to update user status', 'error');
+        let errorMessage = 'Failed to update user status';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
       }
     } catch (error) {
       console.error('Error updating user status:', error);
@@ -931,6 +1657,20 @@ const AdminDashboard = () => {
     return () => clearTimeout(id);
   }, [leaveSearch]);
 
+  // Load Google Maps and auto-fetch location when modal opens
+  useEffect(() => {
+    if (showHostelModal) {
+      loadGoogleMaps();
+      // Auto-fetch location if not already available
+      if (!location) {
+        const timer = setTimeout(() => {
+          getCurrentLocation();
+        }, 1000); // Small delay to let the modal render first
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [showHostelModal]);
+
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -951,15 +1691,23 @@ const AdminDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      // Get the first hostel ID (since we only have one hostel)
+      const { data: hostels } = await supabase.from('hostels').select('id').limit(1);
+      if (!hostels || hostels.length === 0) {
+        showNotification('Please add hostel information first', 'error');
+        return;
+      }
+
       // Create room in the database
       const { data: room, error } = await supabase
         .from('rooms')
         .insert({
+          hostel_id: hostels[0].id,
           room_number: formData.room_number,
           floor: parseInt(formData.floor),
           room_type: formData.room_type,
           capacity: parseInt(formData.capacity),
-          price: parseFloat(formData.price),
+          rent_amount: parseFloat(formData.price),
           status: 'available'
         })
         .select()
@@ -981,6 +1729,567 @@ const AdminDashboard = () => {
     }
   };
 
+  // Validation functions
+  const validateField = (name, value) => {
+    const errors = { ...formErrors };
+    
+    switch (name) {
+      case 'name':
+        if (!value.trim()) {
+          errors.name = 'Hostel name is required';
+        } else if (value.trim().length < 3) {
+          errors.name = 'Hostel name must be at least 3 characters';
+        } else if (!/^[a-zA-Z\s]+$/.test(value.trim())) {
+          errors.name = 'Hostel name should only contain letters and spaces';
+        } else {
+          delete errors.name;
+        }
+        break;
+        
+      case 'address':
+        if (!value.trim()) {
+          errors.address = 'Address is required';
+        } else if (value.trim().length < 10) {
+          errors.address = 'Address must be at least 10 characters';
+        } else if (value.trim().length > 500) {
+          errors.address = 'Address must be less than 500 characters';
+        } else if (!/^[a-zA-Z0-9\s,.-]+$/.test(value.trim())) {
+          errors.address = 'Address contains invalid characters';
+        } else {
+          delete errors.address;
+        }
+        break;
+        
+      case 'city':
+        if (!value.trim()) {
+          errors.city = 'City is required';
+        } else if (value.trim().length < 2) {
+          errors.city = 'City must be at least 2 characters';
+        } else {
+          delete errors.city;
+        }
+        break;
+        
+      case 'state':
+        if (!value.trim()) {
+          errors.state = 'State is required';
+        } else if (value.trim().length < 2) {
+          errors.state = 'State must be at least 2 characters';
+        } else {
+          delete errors.state;
+        }
+        break;
+        
+      case 'pincode':
+        if (!value.trim()) {
+          errors.pincode = 'Pincode is required';
+        } else if (!/^\d{6}$/.test(value.trim())) {
+          errors.pincode = 'Pincode must be 6 digits';
+        } else {
+          delete errors.pincode;
+        }
+        break;
+        
+      case 'contact_phone':
+        if (value && !/^[\+]?[0-9\s\-\(\)]{10,15}$/.test(value.trim())) {
+          errors.contact_phone = 'Please enter a valid phone number';
+        } else {
+          delete errors.contact_phone;
+        }
+        break;
+        
+      case 'contact_email':
+        if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+          errors.contact_email = 'Please enter a valid email address';
+        } else {
+          delete errors.contact_email;
+        }
+        break;
+        
+      case 'capacity':
+        if (!value) {
+          errors.capacity = 'Capacity is required';
+        } else if (isNaN(value) || parseInt(value) < 1) {
+          errors.capacity = 'Capacity must be a positive number';
+        } else if (parseInt(value) > 1000) {
+          errors.capacity = 'Capacity cannot exceed 1,000';
+        } else {
+          delete errors.capacity;
+        }
+        break;
+        
+      case 'pincode':
+        if (!value.trim()) {
+          errors.pincode = 'Pincode is required';
+        } else if (!/^\d{6}$/.test(value.trim())) {
+          errors.pincode = 'Pincode must be exactly 6 digits';
+        } else {
+          delete errors.pincode;
+        }
+        break;
+        
+      default:
+        break;
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateForm = () => {
+    const requiredFields = ['name', 'address', 'city', 'state', 'pincode', 'capacity'];
+    let isValid = true;
+    const newErrors = {};
+    
+    // Validate required fields
+    requiredFields.forEach(field => {
+      const value = hostelFormData[field];
+      if (!value || (typeof value === 'string' && !value.trim())) {
+        newErrors[field] = `${field.charAt(0).toUpperCase() + field.slice(1)} is required`;
+        isValid = false;
+      } else if (field === 'capacity' && (isNaN(value) || parseInt(value) <= 0)) {
+        newErrors[field] = 'Capacity must be a positive number';
+        isValid = false;
+      } else if (field === 'pincode' && (!/^\d{6}$/.test(value))) {
+        newErrors[field] = 'Pincode must be 6 digits';
+        isValid = false;
+      }
+    });
+    
+    // Validate optional fields
+    if (hostelFormData.contact_phone && !/^\d{10}$/.test(hostelFormData.contact_phone.replace(/\D/g, ''))) {
+      newErrors.contact_phone = 'Phone number must be 10 digits';
+      isValid = false;
+    }
+    
+    if (hostelFormData.contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hostelFormData.contact_email)) {
+      newErrors.contact_email = 'Please enter a valid email address';
+      isValid = false;
+    }
+    
+    setFormErrors(newErrors);
+    return isValid;
+  };
+
+  // Google Maps integration
+  const loadGoogleMaps = () => {
+    if (window.google) {
+      setMapLoaded(true);
+      return;
+    }
+    
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyCoPzRJLAmma54BBOyF4AhZ2ZIqGvak8CA&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => setMapLoaded(true);
+    document.head.appendChild(script);
+  };
+
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      setIsLoadingLocation(true);
+      showNotification('Fetching your location...', 'info');
+      
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const coords = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: position.timestamp
+          };
+          
+          setLocation(coords);
+          setIsLoadingLocation(false);
+          showNotification('Location fetched successfully!', 'success');
+          
+          // Also update the location field in form data if needed
+          // You can use reverse geocoding here to get address from coordinates
+          reverseGeocode(coords.lat, coords.lng);
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          let errorMessage = 'Unable to get current location';
+          
+          switch(error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = 'Location access denied. Please enable location permissions.';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = 'Location information unavailable.';
+              break;
+            case error.TIMEOUT:
+              errorMessage = 'Location request timed out.';
+              break;
+            default:
+              errorMessage = 'An unknown error occurred while retrieving location.';
+              break;
+          }
+          
+          setIsLoadingLocation(false);
+          showNotification(errorMessage, 'error');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000
+        }
+      );
+    } else {
+      showNotification('Geolocation is not supported by this browser', 'error');
+    }
+  };
+
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`);
+      const data = await response.json();
+      
+      if (data && data.city && data.principalSubdivision) {
+        // Auto-fill city and state if they're empty
+        if (!hostelFormData.city) {
+          handleInputChange('city', data.city);
+        }
+        if (!hostelFormData.state) {
+          handleInputChange('state', data.principalSubdivision);
+        }
+        
+        // Update location with more details
+        setLocation(prev => ({
+          ...prev,
+          address: data.locality || data.city,
+          city: data.city,
+          state: data.principalSubdivision,
+          country: data.countryName,
+          formattedAddress: data.localityInfo?.administrative?.[0]?.name || data.city
+        }));
+      }
+    } catch (error) {
+      console.error('Reverse geocoding failed:', error);
+      // Don't show error to user as this is optional
+    }
+  };
+
+  const fetchPincodeData = async (pincode) => {
+    if (!pincode || pincode.length !== 6) return;
+    
+    setIsLoadingPincode(true);
+    try {
+      const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+      const data = await response.json();
+      
+      if (data && data[0] && data[0].Status === 'Success' && data[0].PostOffice) {
+        const postOffice = data[0].PostOffice[0];
+        setPincodeData({
+          district: postOffice.District,
+          state: postOffice.State,
+          country: postOffice.Country,
+          region: postOffice.Region,
+          division: postOffice.Division,
+          block: postOffice.Block,
+          taluk: postOffice.Taluk
+        });
+        
+        // Auto-fill city and state if they're empty
+        if (!hostelFormData.city) {
+          handleInputChange('city', postOffice.District);
+        }
+        if (!hostelFormData.state) {
+          handleInputChange('state', postOffice.State);
+        }
+        
+        showNotification('Location details fetched successfully', 'success');
+      } else {
+        showNotification('Invalid pincode or no data found', 'error');
+        setPincodeData(null);
+      }
+    } catch (error) {
+      console.error('Error fetching pincode data:', error);
+      showNotification('Failed to fetch location details', 'error');
+      setPincodeData(null);
+    } finally {
+      setIsLoadingPincode(false);
+    }
+  };
+
+  const handleInputChange = (field, value) => {
+    setHostelFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    
+    // Live validation
+    if (isValidating) {
+      validateField(field, value);
+    }
+    
+    // Auto-fetch pincode data when pincode is complete
+    if (field === 'pincode' && value.length === 6 && /^\d{6}$/.test(value)) {
+      fetchPincodeData(value);
+    }
+  };
+
+  const handleRoomTypeChange = (typeIndex, field, value) => {
+    setHostelFormData(prev => ({
+      ...prev,
+      roomTypes: prev.roomTypes.map((roomType, index) => 
+        index === typeIndex 
+          ? { ...roomType, [field]: value }
+          : roomType
+      )
+    }));
+  };
+
+  const handleRoomTypeAmenityToggle = (typeIndex, amenity) => {
+    setHostelFormData(prev => ({
+      ...prev,
+      roomTypes: prev.roomTypes.map((roomType, index) => 
+        index === typeIndex 
+          ? {
+              ...roomType,
+              amenities: roomType.amenities.includes(amenity)
+                ? roomType.amenities.filter(a => a !== amenity)
+                : [...roomType.amenities, amenity]
+            }
+          : roomType
+      )
+    }));
+  };
+
+  const addRoomType = () => {
+    setHostelFormData(prev => ({
+      ...prev,
+      roomTypes: [
+        ...prev.roomTypes,
+        {
+          type: `custom_${Date.now()}`,
+          name: '',
+          capacity: 1,
+          totalRooms: 0,
+          rentAmount: 0,
+          amenities: []
+        }
+      ]
+    }));
+  };
+
+  const removeRoomType = (typeIndex) => {
+    setHostelFormData(prev => ({
+      ...prev,
+      roomTypes: prev.roomTypes.filter((_, index) => index !== typeIndex)
+    }));
+  };
+
+  const addNewAmenity = () => {
+    if (newAmenity.trim() && !availableAmenities.includes(newAmenity.trim())) {
+      setAvailableAmenities(prev => [...prev, newAmenity.trim()]);
+      setAmenityPricing(prev => ({
+        ...prev,
+        [newAmenity.trim()]: 0
+      }));
+      setNewAmenity('');
+    }
+  };
+
+  const removeAmenity = (amenity) => {
+    setAvailableAmenities(prev => prev.filter(a => a !== amenity));
+    setAmenityPricing(prev => {
+      const newPricing = { ...prev };
+      delete newPricing[amenity];
+      return newPricing;
+    });
+    
+    // Remove this amenity from all room types
+    setHostelFormData(prev => ({
+      ...prev,
+      roomTypes: prev.roomTypes.map(roomType => ({
+        ...roomType,
+        amenities: roomType.amenities.filter(a => a !== amenity)
+      }))
+    }));
+  };
+
+  const updateAmenityPricing = (amenity, price) => {
+    setAmenityPricing(prev => ({
+      ...prev,
+      [amenity]: parseFloat(price) || 0
+    }));
+  };
+
+  const calculateRoomPrice = (roomType) => {
+    const basePrice = roomType.rentAmount || 0;
+    const amenityPrice = roomType.amenities.reduce((total, amenity) => {
+      return total + (amenityPricing[amenity] || 0);
+    }, 0);
+    return basePrice + amenityPrice;
+  };
+
+  const calculateTotalPrice = () => {
+    return (hostelFormData.roomTypes || []).reduce((total, roomType) => {
+      return total + calculateRoomPrice(roomType);
+    }, 0);
+  };
+
+  const handleHostelSubmit = async (e) => {
+    e.preventDefault();
+    setIsValidating(true);
+    setIsSubmitting(true);
+    
+    // Enhanced validation
+    if (!validateForm()) {
+      showNotification('Please fix the form errors before submitting', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Additional validation for required fields
+    if (!hostelFormData.name?.trim()) {
+      showNotification('Hostel name is required', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!hostelFormData.address?.trim()) {
+      showNotification('Address is required', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!hostelFormData.capacity || parseInt(hostelFormData.capacity) <= 0) {
+      showNotification('Valid capacity is required', 'error');
+      setIsSubmitting(false);
+      return;
+    }
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        showNotification('Please log in to continue', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Prepare hostel data matching the actual database schema
+      const hostelData = {
+        name: hostelFormData.name.trim(),
+        address: hostelFormData.address.trim(),
+        location: location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : null,
+        city: hostelFormData.city?.trim() || '',
+        state: hostelFormData.state?.trim() || '',
+        pincode: hostelFormData.pincode?.trim() || '',
+        contact_phone: hostelFormData.contact_phone?.trim() || null,
+        contact_email: hostelFormData.contact_email?.trim() || null,
+        capacity: parseInt(hostelFormData.capacity) || 0,
+        current_occupancy: 0,
+        amenities: hostelFormData.amenities || [],
+        rules: hostelFormData.rules || [],
+        room_types: JSON.stringify(hostelFormData.roomTypes || [])
+      };
+
+      console.log('Submitting hostel data:', hostelData);
+
+      if (editingHostel) {
+        // Update existing hostel using direct Supabase
+        const { data, error } = await supabase
+          .from('hostels')
+          .update(hostelData)
+          .eq('id', editingHostel.id)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Error updating hostel:', error);
+          showNotification(`Failed to update hostel: ${error.message}`, 'error');
+          return;
+        }
+
+        console.log('Hostel updated successfully:', data);
+        showNotification('Hostel updated successfully', 'success');
+      } else {
+        // Create new hostel using direct Supabase
+        const { data, error } = await supabase
+          .from('hostels')
+          .insert([hostelData])
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Error creating hostel:', error);
+          showNotification(`Failed to create hostel: ${error.message}`, 'error');
+          return;
+        }
+
+        console.log('Hostel created successfully:', data);
+        showNotification('Hostel created successfully', 'success');
+      }
+
+      // Reset form and close modal
+      resetHostelForm();
+      setShowHostelModal(false);
+      setEditingHostel(null);
+      await fetchHostels();
+    } catch (error) {
+      console.error('Error in hostel submission:', error);
+      showNotification(`An error occurred: ${error.message}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Helper function to reset form
+  const resetHostelForm = () => {
+    setHostelFormData({
+      name: '',
+      address: '',
+      city: '',
+      state: '',
+      pincode: '',
+      contact_phone: '',
+      contact_email: '',
+      capacity: '',
+      amenities: [],
+      rules: [],
+      roomTypes: [
+        {
+          type: 'standard',
+          name: 'Standard',
+          capacity: 1,
+          totalRooms: 0,
+          rentAmount: 0,
+          amenities: []
+        },
+        {
+          type: 'deluxe',
+          name: 'Deluxe',
+          capacity: 2,
+          totalRooms: 0,
+          rentAmount: 0,
+          amenities: []
+        },
+        {
+          type: 'premium',
+          name: 'Premium',
+          capacity: 2,
+          totalRooms: 0,
+          rentAmount: 0,
+          amenities: []
+        },
+        {
+          type: 'suite',
+          name: 'Suite',
+          capacity: 4,
+          totalRooms: 0,
+          rentAmount: 0,
+          amenities: []
+        }
+      ]
+    });
+    setFormErrors({});
+    setIsValidating(false);
+    setLocation(null);
+  };
+
   const handleUpdateComplaintStatus = async (complaintId, status, notes = '') => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1000,8 +2309,14 @@ const AdminDashboard = () => {
         fetchDashboardStats(); // Refresh stats
         alert('Complaint status updated successfully!');
       } else {
-        const error = await response.json();
-        alert(error.message || 'Failed to update complaint');
+        let errorMessage = 'Failed to update complaint';
+        try {
+          const error = await response.json();
+          errorMessage = error.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        alert(errorMessage);
       }
     } catch (error) {
       console.error('Error updating complaint:', error);
@@ -1066,66 +2381,66 @@ const AdminDashboard = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
-    { id: 'students', label: 'User Management', icon: Users },
+    { id: 'students', label: 'Student Management', icon: Users },
     { id: 'rooms-allocations', label: 'Rooms & Allocations', icon: Building2 },
     { id: 'complaints', label: 'Complaints', icon: AlertCircle },
     { id: 'leave', label: 'Leave Requests', icon: Calendar },
     { id: 'payments', label: 'Payments', icon: CreditCard },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'settings', label: 'Settings', icon: Settings }
+    { id: 'hostel', label: 'Hostel Settings', icon: Settings },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 }
   ];
 
   const renderOverview = () => (
     <div className="space-y-8">
       {/* Quick Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover-lift animate-fadeIn group" style={{ animationDelay: '0.1s' }}>
           <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center group-hover:bg-blue-200 transition-all duration-200">
               <Users className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">Total Students</h3>
-              <p className="text-2xl font-bold text-slate-900">{dashboardStats.totalStudents?.toLocaleString() || 0}</p>
+              <h3 className="text-lg font-semibold text-slate-800 group-hover:text-blue-600 transition-colors duration-200">Total Students</h3>
+              <p className="text-2xl font-bold text-slate-900 group-hover:text-blue-600 transition-colors duration-200">{dashboardStats.totalStudents?.toLocaleString() || 0}</p>
               <p className="text-sm text-slate-600">Registered users</p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover-lift animate-fadeIn group" style={{ animationDelay: '0.2s' }}>
           <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center group-hover:bg-green-200 transition-all duration-200">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">Total Rooms</h3>
-              <p className="text-2xl font-bold text-slate-900">{rooms.length || 0}</p>
-              <p className="text-sm text-slate-600">Available rooms</p>
+              <h3 className="text-lg font-semibold text-slate-800 group-hover:text-green-600 transition-colors duration-200">Total Rooms</h3>
+              <p className="text-2xl font-bold text-slate-900 group-hover:text-green-600 transition-colors duration-200">{rooms.length || 0}</p>
+              <p className="text-sm text-slate-600">In this hostel</p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover-lift animate-fadeIn group" style={{ animationDelay: '0.3s' }}>
           <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center group-hover:bg-purple-200 transition-all duration-200">
               <DollarSign className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">Total Revenue</h3>
-              <p className="text-2xl font-bold text-slate-900">${dashboardStats.totalRevenue?.toLocaleString() || 0}</p>
+              <h3 className="text-lg font-semibold text-slate-800 group-hover:text-purple-600 transition-colors duration-200">Total Revenue</h3>
+              <p className="text-2xl font-bold text-slate-900 group-hover:text-purple-600 transition-colors duration-200">${dashboardStats.totalRevenue?.toLocaleString() || 0}</p>
               <p className="text-sm text-slate-600">All time earnings</p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover-lift animate-fadeIn group" style={{ animationDelay: '0.4s' }}>
           <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-xl flex items-center justify-center group-hover:bg-red-200 transition-all duration-200">
               <AlertCircle className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">Pending Issues</h3>
-              <p className="text-2xl font-bold text-slate-900">{dashboardStats.pendingComplaints || 0}</p>
+              <h3 className="text-lg font-semibold text-slate-800 group-hover:text-red-600 transition-colors duration-200">Pending Issues</h3>
+              <p className="text-2xl font-bold text-slate-900 group-hover:text-red-600 transition-colors duration-200">{dashboardStats.pendingComplaints || 0}</p>
               <p className="text-sm text-slate-600">Need attention</p>
             </div>
           </div>
@@ -1133,63 +2448,92 @@ const AdminDashboard = () => {
       </div>
 
       {/* Occupancy Overview */}
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-6">Occupancy Overview</h2>
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover-lift animate-slideUp group">
+        <h2 className="text-xl font-semibold text-slate-800 mb-6 group-hover:text-amber-600 transition-colors duration-200">Occupancy Overview</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="text-center">
-            <div className="text-3xl font-bold text-blue-600 mb-2">{dashboardStats.totalCapacity || 0}</div>
-            <div className="text-slate-600">Total Capacity</div>
+          <div className="text-center animate-fadeIn" style={{ animationDelay: '0.1s' }}>
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:bg-blue-200 transition-colors duration-200">
+              <div className="text-2xl font-bold text-blue-600">{dashboardStats.totalCapacity || 0}</div>
+            </div>
+            <div className="text-slate-600 font-medium">Total Capacity</div>
           </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-green-600 mb-2">{dashboardStats.totalOccupancy || 0}</div>
-            <div className="text-slate-600">Current Occupancy</div>
+          <div className="text-center animate-fadeIn" style={{ animationDelay: '0.2s' }}>
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:bg-green-200 transition-colors duration-200">
+              <div className="text-2xl font-bold text-green-600">{dashboardStats.totalOccupancy || 0}</div>
+            </div>
+            <div className="text-slate-600 font-medium">Current Occupancy</div>
           </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-purple-600 mb-2">{dashboardStats.occupancyRate || 0}%</div>
-            <div className="text-slate-600">Occupancy Rate</div>
+          <div className="text-center animate-fadeIn" style={{ animationDelay: '0.3s' }}>
+            <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:bg-purple-200 transition-colors duration-200">
+              <div className="text-2xl font-bold text-purple-600">{dashboardStats.occupancyRate || 0}%</div>
+            </div>
+            <div className="text-slate-600 font-medium">Occupancy Rate</div>
           </div>
         </div>
       </div>
 
       {/* Recent Activity */}
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover-lift animate-slideUp group" style={{ animationDelay: '0.5s' }}>
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-slate-800">Recent Activity</h2>
-          <div className="text-sm text-slate-500">Last 24 hours</div>
+          <h2 className="text-xl font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors duration-200">Recent Activity</h2>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={fetchRecentActivity}
+              disabled={isLoadingActivity}
+              className="p-2 text-slate-400 hover:text-amber-600 transition-all duration-200 hover:bg-amber-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover-subtle"
+              title="Refresh Activity"
+            >
+              <Activity className={`w-4 h-4 ${isLoadingActivity ? 'animate-spin' : ''}`} />
+            </button>
+            <div className="text-sm text-slate-500">Last 24 hours</div>
+          </div>
         </div>
         
-        <div className="space-y-4">
-          {complaints.slice(0, 5).map((complaint) => (
-            <div key={complaint.id} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                complaint.priority === 'urgent' ? 'bg-red-100 text-red-600' :
-                complaint.priority === 'high' ? 'bg-orange-100 text-orange-600' :
-                'bg-yellow-100 text-yellow-600'
-              }`}>
-                <AlertCircle className="w-5 h-5" />
+        <div className="space-y-4 max-h-96 overflow-y-auto">
+          {recentActivity.length > 0 ? (
+            recentActivity.map((activity, index) => (
+              <div 
+                key={activity.id}
+                className={`flex items-start space-x-3 p-4 rounded-xl bg-slate-50 hover:bg-slate-100 transition-all duration-200 hover-subtle animate-fadeIn group`}
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
+                  activity.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                  activity.color === 'red' ? 'bg-red-100 text-red-600' :
+                  activity.color === 'green' ? 'bg-green-100 text-green-600' :
+                  activity.color === 'yellow' ? 'bg-yellow-100 text-yellow-600' :
+                  activity.color === 'purple' ? 'bg-purple-100 text-purple-600' :
+                  activity.color === 'orange' ? 'bg-orange-100 text-orange-600' :
+                  activity.color === 'indigo' ? 'bg-indigo-100 text-indigo-600' :
+                  activity.color === 'teal' ? 'bg-teal-100 text-teal-600' :
+                  activity.color === 'cyan' ? 'bg-cyan-100 text-cyan-600' :
+                  activity.color === 'pink' ? 'bg-pink-100 text-pink-600' :
+                  activity.color === 'amber' ? 'bg-amber-100 text-amber-600' :
+                  activity.color === 'lime' ? 'bg-lime-100 text-lime-600' :
+                  'bg-slate-100 text-slate-600'
+                }`}>
+                  {activity.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-800">{activity.title}</p>
+                  <p className="text-sm text-slate-600 truncate">{activity.description}</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {new Date(activity.timestamp).toLocaleString()}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <p className="font-medium text-slate-800">{complaint.title}</p>
-                <p className="text-sm text-slate-600">
-                  By {complaint.users?.full_name} • {complaint.priority} priority
-                </p>
-              </div>
-              <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                complaint.status === 'resolved' ? 'bg-green-100 text-green-700' : 
-                complaint.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
-              }`}>
-                {complaint.status.replace('_', ' ')}
-              </div>
-            </div>
-          ))}
-          
-          {complaints.length === 0 && (
-            <div className="text-center py-12">
+            ))
+          ) : (
+            <div className="text-center py-12 animate-pulse">
               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Activity className="w-8 h-8 text-slate-400" />
+                <Activity className={`w-8 h-8 text-slate-400 ${isLoadingActivity ? 'animate-spin' : ''}`} />
               </div>
-              <p className="text-slate-500 font-medium">No recent activity</p>
-              <p className="text-sm text-slate-400 mt-1">Recent system activities will appear here</p>
+              <p className="text-slate-500 font-medium">
+                {isLoadingActivity ? 'Loading activities...' : 'No recent activity'}
+              </p>
+              <p className="text-sm text-slate-400 mt-1">
+                {isLoadingActivity ? 'Please wait while we fetch the latest activities' : 'Recent system activities will appear here'}
+              </p>
             </div>
           )}
         </div>
@@ -1325,183 +2669,330 @@ const AdminDashboard = () => {
         
         {/* Inline Add Room Form */}
         {showAddRoomForm && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-lg font-semibold text-amber-800">Add New Room</h4>
-          <button 
-                onClick={() => setShowAddRoomForm(false)}
-                className="text-amber-600 hover:text-amber-700 transition-colors"
-          >
-                <X className="w-5 h-5" />
-          </button>
-        </div>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden mb-6">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                    <Plus className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Add New Room</h3>
+                    <p className="text-amber-100 text-sm">Create a new room with pre-configured settings</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAddRoomForm(false)}
+                  className="p-2 text-white hover:bg-white hover:bg-opacity-20 rounded-xl transition-all duration-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
             
-            <form onSubmit={handleAddRoom} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Room Number *
-                  </label>
-                  <input
-                    type="text"
-                    name="room_number"
-                    value={roomFormData.room_number}
-                    onChange={handleRoomFormChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none transition-colors ${
-                      roomFormErrors.room_number 
-                        ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
-                        : roomFormData.room_number && !roomFormErrors.room_number
-                        ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
-                        : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
-                    }`}
-                    placeholder="e.g., 101, A-205"
-                  />
-                  {roomFormErrors.room_number && (
-                    <p className="mt-1 text-sm text-red-600">{roomFormErrors.room_number}</p>
-                  )}
-      </div>
-      
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Floor
-                  </label>
-                  <input
-                    type="number"
-                    name="floor"
-                    value={roomFormData.floor}
-                    onChange={handleRoomFormChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none transition-colors ${
-                      roomFormErrors.floor 
-                        ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
-                        : roomFormData.floor && !roomFormErrors.floor
-                        ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
-                        : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
-                    }`}
-                    placeholder="e.g., 1, 2, 3"
-                    min="0"
-                  />
-                  {roomFormErrors.floor && (
-                    <p className="mt-1 text-sm text-red-600">{roomFormErrors.floor}</p>
-                  )}
+            <form onSubmit={handleAddRoom} className="p-6 space-y-6">
+              {/* Basic Room Information */}
+              <div className="bg-slate-50 rounded-xl p-5">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-slate-800">Basic Room Information</h4>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Room Type
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Room Number <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        name="room_number"
+                        value={roomFormData.room_number}
+                        onChange={handleRoomFormChange}
+                        className={`w-full px-4 py-3 pr-10 border rounded-xl focus:outline-none transition-all text-slate-700 placeholder-slate-400 ${
+                          roomFormErrors.room_number 
+                            ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
+                            : roomFormData.room_number && !roomFormErrors.room_number
+                            ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
+                            : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
+                        }`}
+                        placeholder="e.g., 101, A-205, 3B-12"
+                      />
+                      {roomFormData.room_number && !roomFormErrors.room_number && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-green-500">
+                          <CheckCircle className="w-5 h-5" />
+                        </div>
+                      )}
+                      {roomFormErrors.room_number && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-red-500">
+                          <AlertCircle className="w-5 h-5" />
+                        </div>
+                      )}
+                    </div>
+                    {roomFormData.room_number && !roomFormErrors.room_number && (
+                      <p className="mt-1 text-sm text-green-600 flex items-center">
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        Room number is available
+                      </p>
+                    )}
+                    {roomFormErrors.room_number && (
+                      <div className="mt-1">
+                        <p className="text-sm text-red-600 flex items-center">
+                          <AlertCircle className="w-4 h-4 mr-1" />
+                          {roomFormErrors.room_number}
+                        </p>
+                        {roomFormErrors.room_number.includes('already exists') && (
+                          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-sm text-red-700 font-medium mb-2">Suggested alternatives:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {(() => {
+                                const baseNumber = roomFormData.room_number.trim();
+                                const suggestions = [];
+                                
+                                // Try adding suffixes
+                                for (let i = 1; i <= 5; i++) {
+                                  suggestions.push(`${baseNumber}A`, `${baseNumber}B`, `${baseNumber}-${i}`);
+                                }
+                                
+                                // Try variations
+                                if (baseNumber.includes('-')) {
+                                  const parts = baseNumber.split('-');
+                                  if (parts.length === 2) {
+                                    suggestions.push(`${parts[0]}${parseInt(parts[1]) + 1}`, `${parts[0]}${parseInt(parts[1]) + 2}`);
+                                  }
+                                }
+                                
+                                return suggestions.slice(0, 6).map((suggestion, index) => {
+                                  const isAvailable = !rooms.find(room => 
+                                    room.room_number.toLowerCase() === suggestion.toLowerCase()
+                                  );
+                                  return (
+                                    <button
+                                      key={index}
+                                      type="button"
+                                      onClick={() => {
+                                        setRoomFormData(prev => ({ ...prev, room_number: suggestion }));
+                                        validateRoomField('room_number', suggestion);
+                                      }}
+                                      className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                                        isAvailable 
+                                          ? 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200' 
+                                          : 'bg-gray-100 text-gray-500 border-gray-300 cursor-not-allowed'
+                                      }`}
+                                      disabled={!isAvailable}
+                                    >
+                                      {suggestion} {isAvailable ? '✓' : '✗'}
+                                    </button>
+                                  );
+                                });
+                              })()}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Floor (Optional)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        name="floor"
+                        value={roomFormData.floor}
+                        onChange={handleRoomFormChange}
+                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none transition-all text-slate-700 ${
+                          roomFormErrors.floor 
+                            ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
+                            : roomFormData.floor && !roomFormErrors.floor
+                            ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
+                            : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
+                        }`}
+                        placeholder="e.g., 1, 2, 3"
+                        min="1"
+                        max="8"
+                      />
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-500 text-sm">
+                        🏢
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500">Maximum 8 floors allowed (1-8)</p>
+                    {roomFormErrors.floor && (
+                      <p className="mt-1 text-sm text-red-600">{roomFormErrors.floor}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Room Type Selection */}
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-5 border border-indigo-200">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center">
+                    <Home className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-semibold text-slate-800">Room Type Selection</h4>
+                    <p className="text-sm text-slate-600">Choose from pre-configured room types with all settings</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Select Room Type <span className="text-red-500">*</span>
                   </label>
                   <select
                     name="room_type"
                     value={roomFormData.room_type}
                     onChange={handleRoomFormChange}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none transition-all text-slate-700 ${
+                      roomFormErrors.room_type 
+                        ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
+                        : roomFormData.room_type && !roomFormErrors.room_type
+                        ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
+                        : 'border-slate-300 focus:ring-2 focus:ring-indigo-500'
+                    }`}
                   >
-                    <option value="standard">Standard</option>
-                    <option value="deluxe">Deluxe</option>
-                    <option value="premium">Premium</option>
-                    <option value="suite">Suite</option>
+                    <option value="">Choose a room type...</option>
+                    {availableRoomTypes.map((roomType) => (
+                      <option key={roomType.type} value={roomType.type}>
+                        {roomType.name} • Capacity: {roomType.capacity} • Base Price: ₹{roomType.rentAmount?.toLocaleString()}
+                      </option>
+                    ))}
                   </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Capacity *
-                  </label>
-                  <input
-                    type="number"
-                    name="capacity"
-                    value={roomFormData.capacity}
-                    onChange={handleRoomFormChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none transition-colors ${
-                      roomFormErrors.capacity 
-                        ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
-                        : roomFormData.capacity && !roomFormErrors.capacity
-                        ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
-                        : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
-                    }`}
-                    placeholder="e.g., 2, 4"
-                    min="1"
-                  />
-                  {roomFormErrors.capacity && (
-                    <p className="mt-1 text-sm text-red-600">{roomFormErrors.capacity}</p>
+                  <p className="text-xs text-slate-500">All room details will be auto-populated from the selected type</p>
+                  {roomFormErrors.room_type && (
+                    <p className="mt-1 text-sm text-red-600">{roomFormErrors.room_type}</p>
                   )}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Price per Month ($)
-                  </label>
-                  <input
-                    type="number"
-                    name="price"
-                    value={roomFormData.price}
-                    onChange={handleRoomFormChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none transition-colors ${
-                      roomFormErrors.price 
-                        ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
-                        : roomFormData.price && !roomFormErrors.price
-                        ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
-                        : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
-                    }`}
-                    placeholder="e.g., 500, 750"
-                    min="0"
-                    step="0.01"
-                  />
-                  {roomFormErrors.price && (
-                    <p className="mt-1 text-sm text-red-600">{roomFormErrors.price}</p>
-                  )}
-                </div>
-                
-                <div className="flex items-end">
-                  <button
-                    type="submit"
-                    className={`w-full px-4 py-2 rounded-lg transition-colors flex items-center justify-center ${
-                      isFormValid() 
-                        ? 'bg-amber-600 text-white hover:bg-amber-700' 
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                    disabled={isSubmittingRoom || !isFormValid()}
-                  >
-                    {isSubmittingRoom ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Adding...
-                      </>
-                    ) : (
-                      <>
-                        {isFormValid() ? (
-                          <>
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            Add Room
-                          </>
-                        ) : (
-                          <>
-                            <AlertCircle className="w-4 h-4 mr-2" />
-                            Complete Required Fields
-                          </>
-                        )}
-                      </>
-                    )}
-                  </button>
                 </div>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Amenities
-                </label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {['WiFi', 'Air Conditioning', 'Heating', 'Private Bathroom', 'Shared Bathroom', 'Kitchen', 'Laundry', 'Balcony'].map((amenity) => (
-                    <label key={amenity} className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={roomFormData.amenities.includes(amenity)}
-                        onChange={() => handleAmenityChange(amenity)}
-                        className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
-                      />
-                      <span className="text-sm text-slate-700">{amenity}</span>
-                    </label>
-                  ))}
+
+              {/* Room Type Preview */}
+              {selectedRoomTypeData && (
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border border-green-200 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                      <CheckCircle className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-bold text-slate-800">Room Type Details</h4>
+                      <p className="text-sm text-slate-600">Complete configuration for {selectedRoomTypeData.name}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Pricing Information */}
+                    <div className="bg-white rounded-xl p-5 border border-green-200">
+                      <div className="flex items-center space-x-3 mb-4">
+                        <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-lg flex items-center justify-center">
+                          <DollarSign className="w-4 h-4" />
+                        </div>
+                        <h5 className="font-semibold text-slate-800">Pricing Breakdown</h5>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-600">Base Rent:</span>
+                          <span className="font-semibold text-slate-800">₹{selectedRoomTypeData.rentAmount?.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-600">Amenities:</span>
+                          <span className="font-semibold text-slate-800">₹{selectedRoomTypeData.amenities?.reduce((total, amenity) => total + (amenityPricing[amenity] || 0), 0).toLocaleString()}</span>
+                        </div>
+                        <div className="border-t border-green-200 pt-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-lg font-bold text-slate-800">Total Price:</span>
+                            <span className="text-2xl font-bold text-green-600">
+                              ₹{(selectedRoomTypeData.rentAmount || 0) + (selectedRoomTypeData.amenities?.reduce((total, amenity) => total + (amenityPricing[amenity] || 0), 0) || 0)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-500 text-center mt-1">per month</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Capacity & Features */}
+                    <div className="bg-white rounded-xl p-5 border border-green-200">
+                      <div className="flex items-center space-x-3 mb-4">
+                        <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                          <Users className="w-4 h-4" />
+                        </div>
+                        <h5 className="font-semibold text-slate-800">Capacity & Features</h5>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-600">Capacity:</span>
+                          <span className="font-semibold text-slate-800">{selectedRoomTypeData.capacity} people</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-600">Room Type:</span>
+                          <span className="font-semibold text-slate-800">{selectedRoomTypeData.name}</span>
+                        </div>
+                        <div className="border-t border-green-200 pt-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-600">Amenities:</span>
+                            <span className="font-semibold text-blue-600">{selectedRoomTypeData.amenities?.length || 0} included</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Amenities Grid */}
+                  {selectedRoomTypeData.amenities && selectedRoomTypeData.amenities.length > 0 && (
+                    <div className="mt-6">
+                      <div className="flex items-center space-x-3 mb-4">
+                        <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
+                          <Star className="w-4 h-4" />
+                        </div>
+                        <h5 className="font-semibold text-slate-800">Included Amenities</h5>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {selectedRoomTypeData.amenities.map((amenity, index) => (
+                          <div key={index} className="flex items-center space-x-2 p-3 bg-white rounded-lg border border-green-200">
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <span className="text-sm font-medium text-slate-700">{amenity}</span>
+                            {amenityPricing[amenity] > 0 && (
+                              <span className="text-xs text-green-600 font-medium">
+                                +₹{amenityPricing[amenity]}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
+              )}
+
+              {/* Submit Button */}
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className={`px-8 py-3 rounded-xl transition-all duration-200 flex items-center space-x-3 font-semibold ${
+                    isSubmittingRoom 
+                      ? 'bg-slate-400 text-white cursor-not-allowed' 
+                      : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-lg hover:shadow-xl'
+                  }`}
+                  disabled={isSubmittingRoom}
+                >
+                  {isSubmittingRoom ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Adding Room...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-5 h-5" />
+                      <span>Add Room</span>
+                    </>
+                  )}
+                </button>
               </div>
             </form>
           </div>
@@ -1574,19 +3065,17 @@ const AdminDashboard = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Room Type
+                    Room Type *
                   </label>
-                  <select
+                  <input
+                    type="text"
                     name="room_type"
                     value={roomFormData.room_type}
                     onChange={handleRoomFormChange}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="deluxe">Deluxe</option>
-                    <option value="premium">Premium</option>
-                    <option value="suite">Suite</option>
-                  </select>
+                    placeholder="e.g., Standard, Deluxe, Premium, Suite, Economy, Luxury, etc."
+                  />
+                  <p className="mt-1 text-xs text-slate-500">Enter any custom room type name</p>
                 </div>
                 
                 <div>
@@ -1728,7 +3217,26 @@ const AdminDashboard = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.capacity}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.occupied || 0}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                    {room.price ? `$${room.price}/month` : 'N/A'}
+                    {(() => {
+                      // If room has direct price, use it
+                      if (room.price) {
+                        return `₹${room.price}/month`;
+                      }
+                      
+                      // If room has room_type, calculate price from room type data
+                      if (room.room_type && availableRoomTypes.length > 0) {
+                        const roomTypeData = availableRoomTypes.find(rt => rt.type === room.room_type);
+                        if (roomTypeData) {
+                          const basePrice = roomTypeData.rentAmount || 0;
+                          const amenitiesPrice = (roomTypeData.amenities || []).reduce((total, amenity) => 
+                            total + (amenityPricing[amenity] || 0), 0);
+                          const totalPrice = basePrice + amenitiesPrice;
+                          return `₹${totalPrice.toLocaleString()}/month`;
+                        }
+                      }
+                      
+                      return 'N/A';
+                    })()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -2083,8 +3591,14 @@ const AdminDashboard = () => {
                                 fetchDashboardStats();
                                 alert('Payment marked as paid');
                               } else {
-                                const err = await res.json();
-                                alert(err.message || 'Failed to mark as paid');
+                                let errorMessage = 'Failed to mark as paid';
+                                try {
+                                  const err = await res.json();
+                                  errorMessage = err.message || errorMessage;
+                                } catch (e) {
+                                  errorMessage = `HTTP ${res.status}: ${res.statusText}`;
+                                }
+                                alert(errorMessage);
                               }
                             } catch (e) {
                               console.error(e);
@@ -2125,8 +3639,14 @@ const AdminDashboard = () => {
         fetchLeaveRequests();
         alert(`Leave request ${status}`);
       } else {
-        const err = await response.json();
-        alert(err.message || 'Failed to update leave request');
+        let errorMessage = 'Failed to update leave request';
+        try {
+          const err = await response.json();
+          errorMessage = err.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        alert(errorMessage);
       }
     } catch (e) {
       console.error(e);
@@ -2323,7 +3843,6 @@ const AdminDashboard = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Role</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room Details</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Hostel</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -2401,17 +3920,41 @@ const AdminDashboard = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {student.roomNumber && student.roomNumber !== 'Not Assigned' ? (
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">Room {student.roomNumber}</p>
-                        <p className="text-sm text-slate-500">Floor {student.rooms?.floor || 'N/A'}</p>
-                        <p className="text-xs text-slate-400">{student.rooms?.room_type || 'Standard'}</p>
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                          <p className="text-sm font-medium text-slate-900">Room {student.roomNumber}</p>
+                        </div>
+                        <div className="text-sm text-slate-600">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium mr-2">
+                            Floor {student.rooms?.floor || 'N/A'}
+                          </span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium">
+                            {student.rooms?.room_type || 'Standard'}
+                          </span>
+                        </div>
+                        {student.rooms?.capacity && (
+                          <p className="text-xs text-slate-500">
+                            Capacity: {student.rooms.capacity} person{student.rooms.capacity > 1 ? 's' : ''}
+                          </p>
+                        )}
+                        {student.rooms?.rent_amount && (
+                          <p className="text-xs text-slate-500">
+                            Rent: ₹{student.rooms.rent_amount}/month
+                          </p>
+                        )}
+                        {student.hostelName && student.hostelName !== 'Not Assigned' && (
+                          <p className="text-xs text-slate-500 font-medium">
+                            Hostel: {student.hostelName}
+                          </p>
+                        )}
                       </div>
                     ) : (
-                      <span className="text-sm text-slate-400 italic">No room assigned</span>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
+                        <span className="text-sm text-slate-400 italic">No room assigned</span>
+                      </div>
                     )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                    {student.hostelName && student.hostelName !== 'Not Assigned' ? student.hostelName : 'Not assigned'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
@@ -2444,6 +3987,491 @@ const AdminDashboard = () => {
       </div>
     </div>
   );
+
+  const renderHostelSettings = () => {
+    const currentHostel = hostels.length > 0 ? hostels[0] : null;
+    
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-semibold text-slate-800">Hostel Settings</h2>
+          <button
+            onClick={() => {
+              setEditingHostel(currentHostel);
+              setHostelFormData({
+                name: currentHostel?.name || '',
+                address: currentHostel?.address || '',
+                city: currentHostel?.city || '',
+                state: currentHostel?.state || '',
+                pincode: currentHostel?.pincode || '',
+                contact_phone: currentHostel?.contact_phone || '',
+                contact_email: currentHostel?.contact_email || '',
+                capacity: currentHostel?.capacity || '',
+                amenities: currentHostel?.amenities || [],
+                rules: currentHostel?.rules || [],
+                roomTypes: currentHostel?.roomTypes || [
+                  {
+                    type: 'standard',
+                    name: 'Standard',
+                    capacity: 1,
+                    rentAmount: 0,
+                    amenities: []
+                  },
+                  {
+                    type: 'deluxe',
+                    name: 'Deluxe',
+                    capacity: 2,
+                    rentAmount: 0,
+                    amenities: []
+                  },
+                  {
+                    type: 'premium',
+                    name: 'Premium',
+                    capacity: 2,
+                    rentAmount: 0,
+                    amenities: []
+                  },
+                  {
+                    type: 'suite',
+                    name: 'Suite',
+                    capacity: 4,
+                    rentAmount: 0,
+                    amenities: []
+                  }
+                ]
+              });
+              setFormErrors({});
+              setIsValidating(false);
+              setLocation(currentHostel?.location?.lat && currentHostel?.location?.lng ? {
+                lat: currentHostel.location.lat,
+                lng: currentHostel.location.lng
+              } : null);
+              setShowHostelModal(true);
+            }}
+            className="btn-primary flex items-center space-x-2"
+          >
+            <Settings className="w-5 h-5" />
+            <span>{currentHostel ? 'Update Settings' : 'Add Hostel Information'}</span>
+          </button>
+        </div>
+
+        {/* Hostel Overview */}
+        {currentHostel ? (
+          <div className="grid grid-cols-1 xl:grid-cols-5 lg:grid-cols-4 gap-6">
+            {/* Main Hostel Info */}
+            <div className="xl:col-span-3 lg:col-span-3 bg-white rounded-2xl shadow-lg border border-amber-100 p-6 animate-fadeInUp">
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-800 mb-2">{currentHostel.name}</h3>
+                  <p className="text-slate-600">{currentHostel.address}, {currentHostel.city}, {currentHostel.state} {currentHostel.pincode}</p>
+                </div>
+                <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center animate-float">
+                  <Building2 className="w-6 h-6" />
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {currentHostel.contact_phone && (
+                  <div className="flex items-center space-x-3 p-3 bg-slate-50 rounded-xl">
+                    <Phone className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <p className="text-sm text-slate-500">Phone</p>
+                      <p className="font-medium text-slate-800">{currentHostel.contact_phone}</p>
+                    </div>
+                  </div>
+                )}
+                {currentHostel.contact_email && (
+                  <div className="flex items-center space-x-3 p-3 bg-slate-50 rounded-xl">
+                    <Mail className="w-5 h-5 text-green-600" />
+                    <div>
+                      <p className="text-sm text-slate-500">Email</p>
+                      <p className="font-medium text-slate-800">{currentHostel.contact_email}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Amenities */}
+              {currentHostel.amenities && currentHostel.amenities.length > 0 && (
+                <div className="mb-6">
+                  <h4 className="text-lg font-semibold text-slate-800 mb-3">Available Amenities</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {currentHostel.amenities.map((amenity, index) => (
+                      <span key={index} className="px-3 py-2 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
+                        {amenity}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Rules */}
+              {currentHostel.rules && currentHostel.rules.length > 0 && (
+                <div>
+                  <h4 className="text-lg font-semibold text-slate-800 mb-3">Hostel Rules</h4>
+                  <ul className="space-y-2">
+                    {currentHostel.rules.map((rule, index) => (
+                      <li key={index} className="flex items-start space-x-2 text-sm text-slate-600">
+                        <span className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></span>
+                        <span>{rule}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Stats Sidebar */}
+            <div className="xl:col-span-2 lg:col-span-1 space-y-6">
+              {/* Quick Stats */}
+              <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl shadow-lg border border-amber-100 p-6 animate-scaleIn" style={{ animationDelay: '0.05s' }}>
+                <h4 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                  <Building2 className="w-5 h-5 mr-2 text-amber-600" />
+                  Quick Stats
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-amber-600">{rooms.length}</div>
+                    <div className="text-xs text-slate-600">Total Rooms</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">
+                      {rooms.filter(room => room.status === 'available').length}
+                    </div>
+                    <div className="text-xs text-slate-600">Available</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {rooms.filter(room => room.status === 'occupied').length}
+                    </div>
+                    <div className="text-xs text-slate-600">Occupied</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-600">
+                      {rooms.filter(room => room.status === 'maintenance').length}
+                    </div>
+                    <div className="text-xs text-slate-600">Maintenance</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Capacity Stats */}
+              <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 animate-scaleIn" style={{ animationDelay: '0.1s' }}>
+                <h4 className="text-lg font-semibold text-slate-800 mb-4">Capacity Overview</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Total Capacity</span>
+                    <span className="font-bold text-slate-800">{currentHostel.capacity}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Current Occupancy</span>
+                    <span className="font-bold text-slate-800">{currentHostel.current_occupancy}</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div 
+                      className="bg-gradient-to-r from-amber-500 to-orange-500 h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${currentHostel.capacity > 0 ? (currentHostel.current_occupancy / currentHostel.capacity) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-slate-500 text-center">
+                    {currentHostel.capacity > 0 ? Math.round((currentHostel.current_occupancy / currentHostel.capacity) * 100) : 0}% Occupied
+                  </p>
+                  
+                  {/* Room Count by Type */}
+                  {rooms.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                      <h5 className="text-sm font-semibold text-slate-700 mb-3">Room Count by Type</h5>
+                      <div className="space-y-2">
+                        {Object.entries(
+                          rooms.reduce((acc, room) => {
+                            acc[room.room_type] = (acc[room.room_type] || 0) + 1;
+                            return acc;
+                          }, {})
+                        ).map(([type, count]) => (
+                          <div key={type} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                            <div className="flex items-center space-x-2">
+                              <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
+                              <span className="text-sm font-medium text-slate-700 capitalize">{type}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm text-slate-600">Rooms:</span>
+                              <span className="font-bold text-slate-800">{count}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Room Types Detail */}
+              <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 animate-scaleIn" style={{ animationDelay: '0.2s' }}>
+                <h4 className="text-lg font-semibold text-slate-800 mb-4">Room Types Detail</h4>
+                <div className="space-y-3">
+                  {(() => {
+                    // Get all configured room types from hostel settings
+                    const configuredRoomTypes = currentHostel?.roomTypes || [
+                      { type: 'standard', name: 'Standard', capacity: 1, rentAmount: 0 },
+                      { type: 'deluxe', name: 'Deluxe', capacity: 2, rentAmount: 0 }
+                    ];
+
+                    // Get actual room data
+                    const roomData = rooms.reduce((acc, room) => {
+                      if (!acc[room.room_type]) {
+                        acc[room.room_type] = {
+                          count: 0,
+                          totalCapacity: 0,
+                          currentOccupancy: 0,
+                          availableRooms: 0,
+                          occupiedRooms: 0,
+                          maintenanceRooms: 0
+                        };
+                      }
+                      acc[room.room_type].count += 1;
+                      acc[room.room_type].totalCapacity += room.capacity || 1;
+                      acc[room.room_type].currentOccupancy += room.current_occupancy || 0;
+                      
+                      if (room.status === 'available') acc[room.room_type].availableRooms += 1;
+                      else if (room.status === 'occupied') acc[room.room_type].occupiedRooms += 1;
+                      else if (room.status === 'maintenance') acc[room.room_type].maintenanceRooms += 1;
+                      
+                      return acc;
+                    }, {});
+
+                    // Show all configured room types
+                    return configuredRoomTypes.map((roomType) => {
+                      const actualData = roomData[roomType.type] || {
+                        count: 0,
+                        totalCapacity: 0,
+                        currentOccupancy: 0,
+                        availableRooms: 0,
+                        occupiedRooms: 0,
+                        maintenanceRooms: 0
+                      };
+
+                      return (
+                        <div key={roomType.type} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-semibold text-slate-800 capitalize">{roomType.name}</span>
+                              {roomType.rentAmount > 0 && (
+                                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                                  ₹{roomType.rentAmount}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-amber-600">{actualData.count} rooms</div>
+                              {roomType.totalRooms > 0 && (
+                                <div className="text-xs text-slate-500">Configured: {roomType.totalRooms} rooms</div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Per Room Capacity:</span>
+                              <span className="font-medium text-slate-800">{roomType.capacity}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Actual Total Capacity:</span>
+                              <span className="font-medium text-slate-800">{actualData.totalCapacity}</span>
+                            </div>
+                            {roomType.totalRooms > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-600">Configured Total Capacity:</span>
+                                <span className="font-medium text-blue-600">{(roomType.totalRooms || 0) * (roomType.capacity || 0)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Occupied:</span>
+                              <span className="font-medium text-slate-800">{actualData.currentOccupancy}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-600">Available:</span>
+                              <span className="font-medium text-green-600">{actualData.availableRooms}</span>
+                            </div>
+                            {actualData.maintenanceRooms > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-600">Maintenance:</span>
+                                <span className="font-medium text-red-600">{actualData.maintenanceRooms}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 animate-scaleIn" style={{ animationDelay: '0.3s' }}>
+                <h4 className="text-lg font-semibold text-slate-800 mb-4">Quick Actions</h4>
+                <div className="space-y-3">
+                  <button
+                    onClick={() => setShowRoomModal(true)}
+                    className="w-full flex items-center space-x-3 p-3 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-100 transition-colors"
+                  >
+                    <Home className="w-5 h-5" />
+                    <span className="font-medium">Add Room</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingHostel(currentHostel);
+                      setHostelFormData({
+                        name: currentHostel.name,
+                        address: currentHostel.address || '',
+                        city: currentHostel.city || '',
+                        state: currentHostel.state || '',
+                        pincode: currentHostel.pincode || '',
+                        contact_phone: currentHostel.contact_phone || '',
+                        contact_email: currentHostel.contact_email || '',
+                        capacity: currentHostel.capacity || '',
+                        amenities: currentHostel.amenities || [],
+                        rules: currentHostel.rules || [],
+                        roomTypes: currentHostel.roomTypes || [
+                          {
+                            type: 'standard',
+                            name: 'Standard',
+                            capacity: 1,
+                            rentAmount: 0,
+                            amenities: []
+                          },
+                          {
+                            type: 'deluxe',
+                            name: 'Deluxe',
+                            capacity: 2,
+                            rentAmount: 0,
+                            amenities: []
+                          },
+                          {
+                            type: 'premium',
+                            name: 'Premium',
+                            capacity: 2,
+                            rentAmount: 0,
+                            amenities: []
+                          },
+                          {
+                            type: 'suite',
+                            name: 'Suite',
+                            capacity: 4,
+                            rentAmount: 0,
+                            amenities: []
+                          }
+                        ]
+                      });
+                      setFormErrors({});
+                      setIsValidating(false);
+                      setLocation(currentHostel?.location?.lat && currentHostel?.location?.lng ? {
+                        lat: currentHostel.location.lat,
+                        lng: currentHostel.location.lng
+                      } : null);
+                      setShowHostelModal(true);
+                    }}
+                    className="w-full flex items-center space-x-3 p-3 bg-amber-50 text-amber-700 rounded-xl hover:bg-amber-100 transition-colors"
+                  >
+                    <Edit className="w-5 h-5" />
+                    <span className="font-medium">Edit Details</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Hostel Information */}
+              <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 animate-scaleIn" style={{ animationDelay: '0.4s' }}>
+                <h4 className="text-lg font-semibold text-slate-800 mb-4">Hostel Information</h4>
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Created:</span>
+                    <span className="font-medium text-slate-800">
+                      {new Date(currentHostel.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Last Updated:</span>
+                    <span className="font-medium text-slate-800">
+                      {new Date(currentHostel.updated_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Location:</span>
+                    <span className="font-medium text-slate-800">{currentHostel.city}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Pincode:</span>
+                    <span className="font-medium text-slate-800">{currentHostel.pincode}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-12 bg-white rounded-2xl shadow-lg border border-amber-100">
+            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Building2 className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">No Hostel Information</h3>
+            <p className="text-slate-600 mb-6">Set up your hostel information to get started.</p>
+            <button
+              onClick={() => {
+                setEditingHostel(null);
+                setHostelFormData({
+                  name: '',
+                  address: '',
+                  city: '',
+                  state: '',
+                  pincode: '',
+                  contact_phone: '',
+                  contact_email: '',
+                  capacity: '',
+                  amenities: [],
+                  rules: [],
+                  roomTypes: [
+                    {
+                      type: 'standard',
+                      name: 'Standard',
+                      capacity: 1,
+                      rentAmount: 0,
+                      amenities: []
+                    },
+                    {
+                      type: 'deluxe',
+                      name: 'Deluxe',
+                      capacity: 2,
+                      rentAmount: 0,
+                      amenities: []
+                    },
+                    {
+                      type: 'premium',
+                      name: 'Premium',
+                      capacity: 2,
+                      rentAmount: 0,
+                      amenities: []
+                    },
+                    {
+                      type: 'suite',
+                      name: 'Suite',
+                      capacity: 4,
+                      rentAmount: 0,
+                      amenities: []
+                    }
+                  ]
+                });
+                setFormErrors({});
+                setIsValidating(false);
+                setShowHostelModal(true);
+              }}
+              className="btn-primary"
+            >
+              Add Hostel Information
+            </button>
+          </div>
+        )}
+
+      </div>
+    );
+  };
 
   const renderComplaints = () => (
     <div className="space-y-6">
@@ -2769,8 +4797,8 @@ const AdminDashboard = () => {
     </div>
   );
 
-  const RoomModal = () => {
-    const { register, handleSubmit, formState: { errors, isValid }, reset } = useForm({
+  const RoomModal = ({ isOpen, onClose, onSubmit, isSubmitting }) => {
+    const { register, handleSubmit: formHandleSubmit, formState: { errors, isValid }, reset } = useForm({
       resolver: zodResolver(roomSchema),
       mode: 'onChange',
       defaultValues: {
@@ -2782,18 +4810,18 @@ const AdminDashboard = () => {
       }
     });
 
-    const onSubmit = (data) => {
-      handleCreateRoom(data);
+    const handleFormSubmit = (data) => {
+      onSubmit(data);
       reset();
     };
 
-    if (!showRoomModal) return null;
+    if (!isOpen) return null;
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
           <h3 className="text-xl font-semibold text-slate-800 mb-4">Add New Room</h3>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={formHandleSubmit(handleFormSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Room Number *</label>
@@ -2818,16 +4846,15 @@ const AdminDashboard = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Room Type</label>
-              <select
+              <label className="block text-sm font-medium text-slate-700 mb-1">Room Type *</label>
+              <input
+                type="text"
                 {...register('room_type')}
                 className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.room_type ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-              >
-                <option value="standard">Standard</option>
-                <option value="deluxe">Deluxe</option>
-                <option value="suite">Suite</option>
-              </select>
+                placeholder="e.g., Standard, Deluxe, Premium, Suite, Economy, Luxury, etc."
+              />
               {errors.room_type && <p className="mt-1 text-sm text-red-600">{errors.room_type.message}</p>}
+              <p className="mt-1 text-xs text-slate-500">Enter any custom room type name</p>
             </div>
             
             <div className="grid grid-cols-2 gap-4">
@@ -2861,7 +4888,7 @@ const AdminDashboard = () => {
             <div className="flex space-x-3 pt-4">
               <button
                 type="button"
-                onClick={() => setShowRoomModal(false)}
+                onClick={onClose}
                 className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
                 disabled={isSubmitting}
               >
@@ -2889,6 +4916,8 @@ const AdminDashboard = () => {
         return renderOverview();
       case 'students':
         return renderStudents();
+      case 'hostel':
+        return renderHostelSettings();
       case 'rooms-allocations':
         return renderRoomsAllocations();
       case 'complaints':
@@ -2909,28 +4938,28 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex">
       {/* Sidebar Navigation */}
-      <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40">
+      <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40 animate-slideInLeft">
         {/* Logo */}
-        <div className="p-6 border-b border-amber-200/50">
-          <Link to="/" className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-red-600 rounded-lg flex items-center justify-center">
+        <div className="p-6 border-b border-amber-200/50 animate-fadeIn" style={{ animationDelay: '0.1s' }}>
+          <Link to="/" className="flex items-center space-x-3 group">
+            <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-red-600 rounded-lg flex items-center justify-center group-hover:scale-105 transition-all duration-200 shadow-lg">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
-              <span className="text-xl font-bold text-slate-900">HostelHaven</span>
+              <span className="text-xl font-bold text-slate-900 gradient-text">HostelHaven</span>
               <div className="text-xs text-slate-500">Admin Portal</div>
             </div>
           </Link>
         </div>
 
         {/* User Profile */}
-        <div className="p-6 border-b border-amber-200/50">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-full flex items-center justify-center">
+        <div className="p-6 border-b border-amber-200/50 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
+          <div className="flex items-center space-x-3 group">
+            <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-full flex items-center justify-center group-hover:scale-105 transition-all duration-200 shadow-lg">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
-              <p className="font-medium text-slate-900">{user.fullName}</p>
+              <p className="font-medium text-slate-900 group-hover:text-red-600 transition-colors duration-200">{user.fullName}</p>
               <p className="text-sm text-slate-500">Administrator</p>
               <p className="text-xs text-slate-400">{user.email}</p>
             </div>
@@ -2938,30 +4967,31 @@ const AdminDashboard = () => {
         </div>
 
         {/* Navigation Menu */}
-        <nav className="p-4">
+        <nav className="p-4 animate-fadeIn" style={{ animationDelay: '0.3s' }}>
           <div className="space-y-2">
-            {tabs.map((tab) => (
+            {tabs.map((tab, index) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors text-left ${
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 text-left group ${
                   activeTab === tab.id
                     ? 'bg-red-600 text-white shadow-lg'
-                    : 'text-slate-600 hover:bg-red-50 hover:text-red-700'
+                    : 'text-slate-600'
                 }`}
+                style={{ animationDelay: `${0.4 + index * 0.05}s` }}
               >
-                <tab.icon className="w-5 h-5" />
-                <span className="font-medium">{tab.label}</span>
+                <tab.icon className="w-5 h-5 transition-all duration-200" />
+                <span className="font-medium transition-transform duration-200">{tab.label}</span>
               </button>
             ))}
           </div>
         </nav>
 
         {/* Logout Button */}
-        <div className="absolute bottom-6 left-4 right-4">
+        <div className="absolute bottom-6 left-4 right-4 animate-fadeInUp" style={{ animationDelay: '0.8s' }}>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center space-x-3 px-4 py-3 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+            className="w-full flex items-center space-x-3 px-4 py-3 text-slate-600 rounded-xl transition-all duration-300 group"
           >
             <LogOut className="w-5 h-5" />
             <span className="font-medium">Logout</span>
@@ -2970,18 +5000,18 @@ const AdminDashboard = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 ml-64">
+      <div className="flex-1 ml-64 animate-slideInRight">
         {/* Top Header */}
-        <header className="bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-xl flex items-center justify-center">
+        <header className="bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm p-6 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
+          <div className="flex items-center space-x-4 group">
+            <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-xl flex items-center justify-center group-hover:scale-105 transition-all duration-200 shadow-lg">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-slate-800">
+              <h1 className="text-3xl font-bold text-slate-800 gradient-text">
                 {tabs.find(tab => tab.id === activeTab)?.label || 'Admin Dashboard'}
               </h1>
-              <p className="text-slate-600">Manage the entire hostel system</p>
+              <p className="text-slate-600 group-hover:text-amber-600 transition-colors duration-200">Manage your hostel system</p>
             </div>
           </div>
         </header>
@@ -2995,7 +5025,12 @@ const AdminDashboard = () => {
       </div>
 
       {/* Modals */}
-      <RoomModal />
+      <RoomModal 
+        isOpen={showRoomModal} 
+        onClose={() => setShowRoomModal(false)} 
+        onSubmit={handleCreateRoom}
+        isSubmitting={isSubmitting}
+      />
 
       {/* View Room Slide-over */}
       {showViewRoomPanel && viewingRoom && (
@@ -3399,12 +5434,29 @@ const AdminDashboard = () => {
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
                   <option value="">Choose a room...</option>
-                  {availableRooms.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      Room {room.room_number} - Floor {room.floor} - {room.room_type} - ${room.price}/month
-                      {room.amenities && room.amenities.length > 0 && ` (${room.amenities.join(', ')})`}
-                    </option>
-                  ))}
+                  {availableRooms.map((room) => {
+                    // Calculate room price
+                    let roomPrice = 'N/A';
+                    if (room.price) {
+                      roomPrice = `₹${room.price}`;
+                    } else if (room.room_type && availableRoomTypes.length > 0) {
+                      const roomTypeData = availableRoomTypes.find(rt => rt.type === room.room_type);
+                      if (roomTypeData) {
+                        const basePrice = roomTypeData.rentAmount || 0;
+                        const amenitiesPrice = (roomTypeData.amenities || []).reduce((total, amenity) => 
+                          total + (amenityPricing[amenity] || 0), 0);
+                        const totalPrice = basePrice + amenitiesPrice;
+                        roomPrice = `₹${totalPrice.toLocaleString()}`;
+                      }
+                    }
+                    
+                    return (
+                      <option key={room.id} value={room.id}>
+                        Room {room.room_number} - Floor {room.floor} - {room.room_type} - {roomPrice}/month
+                        {room.amenities && room.amenities.length > 0 && ` (${room.amenities.join(', ')})`}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -3614,6 +5666,1246 @@ const AdminDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Hostel Settings Modal */}
+      {showHostelModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden animate-scaleIn">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-8 py-6 text-white">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold">
+                      {editingHostel ? 'Update Hostel Information' : 'Add Hostel Information'}
+                    </h3>
+                    <p className="text-amber-100 text-sm">
+                      {editingHostel ? 'Modify your hostel information' : 'Set up your hostel details and configuration'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    resetHostelForm();
+                    setShowHostelModal(false);
+                    setEditingHostel(null);
+                  }}
+                  className="p-2 hover:bg-white hover:bg-opacity-20 rounded-xl transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-8 max-h-[calc(95vh-120px)] overflow-y-auto">
+              <form onSubmit={handleHostelSubmit} className="space-y-8">
+                {/* Basic Information Section */}
+                <div className="bg-slate-50 rounded-2xl p-6">
+                  <h4 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                    <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                      <Building2 className="w-4 h-4" />
+                    </div>
+                    <span>Basic Information</span>
+                  </h4>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Hostel Name <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={hostelFormData.name}
+                          onChange={(e) => handleInputChange('name', e.target.value)}
+                          onBlur={() => validateField('name', hostelFormData.name)}
+                          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                            formErrors.name 
+                              ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                              : 'border-slate-300 focus:ring-amber-500 hover:border-amber-400'
+                          }`}
+                          placeholder="Enter hostel name (letters and spaces only)"
+                        />
+                        {hostelFormData.name && !formErrors.name && (
+                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                            <div className="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center">
+                              <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {formErrors.name && (
+                        <p className="mt-1 text-sm text-red-600 flex items-center space-x-1">
+                          <AlertCircle className="w-4 h-4" />
+                          <span>{formErrors.name}</span>
+                        </p>
+                      )}
+                      <p className="mt-1 text-xs text-slate-500">
+                        Only letters and spaces allowed. No numbers or special characters.
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Capacity <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={hostelFormData.capacity}
+                          onChange={(e) => handleInputChange('capacity', e.target.value)}
+                          onBlur={() => validateField('capacity', hostelFormData.capacity)}
+                          className={`w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                            formErrors.capacity 
+                              ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                              : 'border-slate-300 focus:ring-amber-500 hover:border-amber-400'
+                          }`}
+                          placeholder="Enter total capacity"
+                          min="1"
+                          max="1000"
+                        />
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 text-sm">
+                          <Users className="w-4 h-4" />
+                        </div>
+                      </div>
+                      {formErrors.capacity && (
+                        <p className="mt-1 text-sm text-red-600 flex items-center space-x-1">
+                          <AlertCircle className="w-4 h-4" />
+                          <span>{formErrors.capacity}</span>
+                        </p>
+                      )}
+                      <p className="mt-1 text-xs text-slate-500">
+                        Maximum capacity: 1,000 students
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Location Information Section */}
+                <div className="bg-slate-50 rounded-2xl p-6">
+                  <h4 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                    <div className="w-8 h-8 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <span>Location Information</span>
+                  </h4>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Address <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        value={hostelFormData.address}
+                        onChange={(e) => handleInputChange('address', e.target.value)}
+                        onBlur={() => validateField('address', hostelFormData.address)}
+                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-colors resize-none ${
+                          formErrors.address 
+                            ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                            : 'border-slate-300 focus:ring-amber-500 hover:border-amber-400'
+                        }`}
+                        placeholder="Enter complete address"
+                        rows={3}
+                      />
+                      {formErrors.address && (
+                        <p className="mt-1 text-sm text-red-600 flex items-center space-x-1">
+                          <AlertCircle className="w-4 h-4" />
+                          <span>{formErrors.address}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Pincode <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={hostelFormData.pincode}
+                            onChange={(e) => handleInputChange('pincode', e.target.value)}
+                            onBlur={() => validateField('pincode', hostelFormData.pincode)}
+                            className={`w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                              formErrors.pincode 
+                                ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                                : 'border-slate-300 focus:ring-amber-500 hover:border-amber-400'
+                            }`}
+                            placeholder="Enter 6-digit pincode"
+                            maxLength="6"
+                          />
+                          {isLoadingPincode && (
+                            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-amber-600"></div>
+                            </div>
+                          )}
+                        </div>
+                        {formErrors.pincode && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center space-x-1">
+                            <AlertCircle className="w-4 h-4" />
+                            <span>{formErrors.pincode}</span>
+                          </p>
+                        )}
+                        {pincodeData && (
+                          <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="text-sm text-green-800">
+                              <div className="font-medium">Location Details:</div>
+                              <div className="mt-1 space-y-1">
+                                <div><span className="font-medium">District:</span> {pincodeData.district}</div>
+                                <div><span className="font-medium">State:</span> {pincodeData.state}</div>
+                                <div><span className="font-medium">Region:</span> {pincodeData.region}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          City <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={hostelFormData.city}
+                          onChange={(e) => handleInputChange('city', e.target.value)}
+                          onBlur={() => validateField('city', hostelFormData.city)}
+                          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                            formErrors.city 
+                              ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                              : 'border-slate-300 focus:ring-amber-500 hover:border-amber-400'
+                          }`}
+                          placeholder="Enter city"
+                        />
+                        {formErrors.city && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center space-x-1">
+                            <AlertCircle className="w-4 h-4" />
+                            <span>{formErrors.city}</span>
+                          </p>
+                        )}
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          State <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={hostelFormData.state}
+                          onChange={(e) => handleInputChange('state', e.target.value)}
+                          onBlur={() => validateField('state', hostelFormData.state)}
+                          className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                            formErrors.state 
+                              ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                              : 'border-slate-300 focus:ring-amber-500 hover:border-amber-400'
+                          }`}
+                          placeholder="Enter state"
+                        />
+                        {formErrors.state && (
+                          <p className="mt-1 text-sm text-red-600 flex items-center space-x-1">
+                            <AlertCircle className="w-4 h-4" />
+                            <span>{formErrors.state}</span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Professional Location Services */}
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <h5 className="text-lg font-semibold text-slate-800 flex items-center space-x-2">
+                            <MapPin className="w-5 h-5 text-blue-600" />
+                            <span>Location Services</span>
+                          </h5>
+                          <p className="text-sm text-slate-600 mt-1">Get precise location coordinates and map integration</p>
+                        </div>
+                        <div className="flex space-x-3">
+                          <button
+                            type="button"
+                            onClick={getCurrentLocation}
+                            disabled={isLoadingLocation}
+                            className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center space-x-2 shadow-sm ${
+                              isLoadingLocation 
+                                ? 'bg-blue-400 text-white cursor-not-allowed' 
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            {isLoadingLocation ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            ) : (
+                              <MapPin className="w-4 h-4" />
+                            )}
+                            <span>{isLoadingLocation ? 'Fetching...' : 'Get Current Location'}</span>
+                          </button>
+                          
+                          {location && (
+                            <button
+                              type="button"
+                              onClick={getCurrentLocation}
+                              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium flex items-center space-x-2 shadow-sm"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              <span>Refresh Location</span>
+                            </button>
+                          )}
+                          
+                        </div>
+                      </div>
+                      
+                      {location && (
+                        <div className="bg-white rounded-lg p-4 border border-blue-200">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="text-sm font-medium text-slate-700">Live Location Data</span>
+                            <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">Live</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-3">
+                              <div className="text-sm text-slate-600">
+                                <span className="font-medium text-slate-500">Coordinates:</span>
+                                <div className="font-mono bg-slate-50 px-3 py-2 rounded text-xs mt-1 border">
+                                  {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                                </div>
+                              </div>
+                              <div className="text-sm text-slate-600">
+                                <span className="font-medium text-slate-500">Accuracy:</span>
+                                <span className="ml-1">±{Math.round(location.accuracy || 5)} meters</span>
+                              </div>
+                              {location.address && (
+                                <div className="text-sm text-slate-600">
+                                  <span className="font-medium text-slate-500">Address:</span>
+                                  <div className="mt-1 text-slate-700">{location.address}</div>
+                                </div>
+                              )}
+                            </div>
+                            <div className="space-y-3">
+                              <div className="text-sm text-slate-600">
+                                <span className="font-medium text-slate-500">Status:</span>
+                                <span className="ml-1 text-green-600 font-medium">Active & Live</span>
+                              </div>
+                              <div className="text-sm text-slate-600">
+                                <span className="font-medium text-slate-500">Source:</span>
+                                <span className="ml-1">GPS + Reverse Geocoding</span>
+                              </div>
+                              {location.city && location.state && (
+                                <div className="text-sm text-slate-600">
+                                  <span className="font-medium text-slate-500">Auto-filled:</span>
+                                  <div className="mt-1 text-slate-700">{location.city}, {location.state}</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="mt-3 pt-3 border-t border-slate-200">
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                              <span>Last updated: {new Date().toLocaleTimeString()}</span>
+                              <span>Location ID: {Math.random().toString(36).substr(2, 9)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {!location && (
+                        <div className="bg-white rounded-lg p-4 border border-slate-200">
+                          <div className="text-center text-slate-500">
+                            <MapPin className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                            <p className="text-sm">Click "Get Current Location" to fetch coordinates</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contact Information Section */}
+                <div className="bg-slate-50 rounded-2xl p-6">
+                  <h4 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+                    <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
+                      <Phone className="w-4 h-4" />
+                    </div>
+                    <span>Contact Information</span>
+                  </h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Contact Phone</label>
+                      <input
+                        type="tel"
+                        value={hostelFormData.contact_phone}
+                        onChange={(e) => handleInputChange('contact_phone', e.target.value)}
+                        onBlur={() => validateField('contact_phone', hostelFormData.contact_phone)}
+                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                          formErrors.contact_phone 
+                            ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                            : 'border-slate-300 focus:ring-amber-500 hover:border-amber-400'
+                        }`}
+                        placeholder="Enter phone number"
+                      />
+                      {formErrors.contact_phone && (
+                        <p className="mt-1 text-sm text-red-600 flex items-center space-x-1">
+                          <AlertCircle className="w-4 h-4" />
+                          <span>{formErrors.contact_phone}</span>
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Contact Email</label>
+                      <input
+                        type="email"
+                        value={hostelFormData.contact_email}
+                        onChange={(e) => handleInputChange('contact_email', e.target.value)}
+                        onBlur={() => validateField('contact_email', hostelFormData.contact_email)}
+                        className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                          formErrors.contact_email 
+                            ? 'border-red-300 focus:ring-red-500 bg-red-50' 
+                            : 'border-slate-300 focus:ring-amber-500 hover:border-amber-400'
+                        }`}
+                        placeholder="Enter email address"
+                      />
+                      {formErrors.contact_email && (
+                        <p className="mt-1 text-sm text-red-600 flex items-center space-x-1">
+                          <AlertCircle className="w-4 h-4" />
+                          <span>{formErrors.contact_email}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Professional Amenities Selection Section */}
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-6 border border-amber-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center shadow-lg">
+                        <Star className="w-5 h-5 text-white" />
+                    </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-slate-800">Basic Amenities</h4>
+                        <p className="text-sm text-slate-600">Select the amenities available at your hostel</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm text-slate-500 bg-white px-3 py-1 rounded-full border border-amber-200">
+                      <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+                      <span>{hostelFormData.amenities.length} Selected</span>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white rounded-xl p-5 border border-amber-200 shadow-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {[
+                        { name: 'WiFi', icon: '📶', color: 'blue' },
+                        { name: 'Laundry', icon: '👕', color: 'purple' },
+                        { name: 'Parking', icon: '🚗', color: 'green' },
+                        { name: 'Security', icon: '🔒', color: 'red' },
+                        { name: 'Cafeteria', icon: '🍽️', color: 'orange' },
+                        { name: 'Gym', icon: '💪', color: 'indigo' },
+                        { name: 'Library', icon: '📚', color: 'teal' },
+                        { name: 'Study Room', icon: '📖', color: 'pink' },
+                        { name: 'Common Room', icon: '🛋️', color: 'yellow' },
+                        { name: 'Air Conditioning', icon: '❄️', color: 'cyan' },
+                        { name: 'Hot Water', icon: '🔥', color: 'rose' },
+                        { name: 'CCTV', icon: '📹', color: 'slate' }
+                      ].map((amenity) => (
+                        <label key={amenity.name} className="group relative flex flex-col items-center p-4 bg-gradient-to-br from-slate-50 to-white rounded-xl border-2 border-slate-200 hover:border-amber-300 hover:shadow-md transition-all duration-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                            checked={hostelFormData.amenities.includes(amenity.name)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setHostelFormData({
+                                ...hostelFormData,
+                                  amenities: [...hostelFormData.amenities, amenity.name]
+                              });
+                            } else {
+                              setHostelFormData({
+                                ...hostelFormData,
+                                  amenities: hostelFormData.amenities.filter(a => a !== amenity.name)
+                              });
+                            }
+                          }}
+                            className="sr-only"
+                          />
+                          
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-3 shadow-md transition-all duration-200 ${
+                            hostelFormData.amenities.includes(amenity.name) 
+                              ? 'bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg scale-110' 
+                              : 'bg-slate-100 text-slate-600 group-hover:bg-amber-100 group-hover:text-amber-600'
+                          }`}>
+                            {amenity.icon}
+                          </div>
+                          
+                          <span className={`text-sm font-medium text-center transition-colors duration-200 ${
+                            hostelFormData.amenities.includes(amenity.name) 
+                              ? 'text-amber-700' 
+                              : 'text-slate-700 group-hover:text-slate-800'
+                          }`}>
+                            {amenity.name}
+                          </span>
+                          
+                          {hostelFormData.amenities.includes(amenity.name) && (
+                            <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center shadow-lg">
+                              <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                      </label>
+                    ))}
+                    </div>
+                    
+                    {hostelFormData.amenities.length === 0 && (
+                      <div className="text-center py-8">
+                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <Star className="w-8 h-8 text-slate-400" />
+                        </div>
+                        <p className="text-slate-500 text-sm">Select amenities to show what your hostel offers</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Professional Amenities Management Section */}
+                <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                        <Settings className="w-5 h-5 text-white" />
+                    </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-slate-800">Amenities Management</h4>
+                        <p className="text-sm text-slate-600">Configure and price your hostel amenities</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm text-slate-500 bg-white px-3 py-1 rounded-full border border-slate-200">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      <span>{(availableAmenities || []).length} Amenities</span>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    {/* Add New Amenity Card */}
+                    <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center space-x-3 mb-4">
+                        <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                          <Plus className="w-4 h-4" />
+                        </div>
+                        <h5 className="text-lg font-semibold text-slate-800">Add New Amenity</h5>
+                      </div>
+                      
+                      <div className="flex space-x-3">
+                        <div className="flex-1">
+                        <input
+                          type="text"
+                          value={newAmenity}
+                          onChange={(e) => setNewAmenity(e.target.value)}
+                            className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-slate-700 placeholder-slate-400"
+                            placeholder="Enter amenity name (e.g., Swimming Pool, Gym, etc.)"
+                            onKeyPress={(e) => e.key === 'Enter' && addNewAmenity()}
+                        />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={addNewAmenity}
+                          disabled={!newAmenity.trim()}
+                          className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl font-medium"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Amenity</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Amenities Grid with Enhanced Design */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-4 border-b border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
+                              <Star className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <h5 className="text-lg font-semibold text-slate-800">Amenities & Pricing</h5>
+                              <p className="text-sm text-slate-600">Set individual pricing for each amenity</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 text-sm text-slate-500 bg-white px-3 py-1 rounded-full border border-slate-200">
+                            <span className="font-medium">₹</span>
+                            <span>Pricing in INR</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="p-6">
+                        {(availableAmenities || []).length === 0 ? (
+                          <div className="text-center py-12">
+                            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <Settings className="w-8 h-8 text-slate-400" />
+                            </div>
+                            <h6 className="text-lg font-medium text-slate-600 mb-2">No Amenities Added Yet</h6>
+                            <p className="text-slate-500">Add your first amenity to get started with pricing configuration.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {(availableAmenities || []).map((amenity, index) => (
+                              <div key={amenity} className="group bg-gradient-to-br from-slate-50 to-white rounded-xl p-4 border border-slate-200 hover:border-blue-300 hover:shadow-md transition-all duration-200">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-md">
+                                      {amenity.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <h6 className="font-semibold text-slate-800 text-sm">{amenity}</h6>
+                                      <p className="text-xs text-slate-500">Amenity #{index + 1}</p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAmenity(amenity)}
+                                    className="opacity-0 group-hover:opacity-100 p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200"
+                                    title="Remove amenity"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                                
+                                <div className="space-y-3">
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                                      Monthly Price (₹)
+                                    </label>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 text-sm">₹</span>
+                            <input
+                              type="number"
+                              value={amenityPricing[amenity] || 0}
+                              onChange={(e) => updateAmenityPricing(amenity, e.target.value)}
+                                        className="w-full pl-8 pr-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
+                              placeholder="0"
+                              min="0"
+                              step="50"
+                            />
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex items-center justify-between text-xs text-slate-500">
+                                    <span>Base Price</span>
+                                    <span className="font-medium text-green-600">
+                                      ₹{(amenityPricing[amenity] || 0).toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+                          </div>
+                        ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Professional Room Types & Pricing Section */}
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 border border-indigo-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                        <Home className="w-5 h-5 text-white" />
+                    </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-slate-800">Room Types & Pricing</h4>
+                        <p className="text-sm text-slate-600">Configure room types, capacity, and pricing structure</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm text-slate-500 bg-white px-3 py-1 rounded-full border border-indigo-200">
+                      <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+                      <span>{(hostelFormData.roomTypes || []).length} Room Types</span>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    {(hostelFormData.roomTypes || []).map((roomType, typeIndex) => (
+                      <div key={typeIndex} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        {/* Room Type Header */}
+                        <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-4 border-b border-slate-200">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-md">
+                                {roomType.name ? roomType.name.charAt(0).toUpperCase() : 'R'}
+                              </div>
+                              <div>
+                                <h5 className="text-xl font-bold text-slate-800">
+                            {roomType.name || `Room Type ${typeIndex + 1}`}
+                          </h5>
+                                <p className="text-sm text-slate-600">Room configuration and pricing</p>
+                              </div>
+                            </div>
+                          {(hostelFormData.roomTypes || []).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeRoomType(typeIndex)}
+                                className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all duration-200 hover:scale-105"
+                                title="Remove room type"
+                            >
+                                <Trash2 className="w-5 h-5" />
+                            </button>
+                          )}
+                          </div>
+                        </div>
+                        
+                        {/* Room Configuration Form */}
+                        <div className="p-6 space-y-6">
+                          {/* Basic Configuration Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                            <div className="space-y-2">
+                              <label className="block text-sm font-semibold text-slate-700">
+                              Room Type Name <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={roomType.name}
+                              onChange={(e) => handleRoomTypeChange(typeIndex, 'name', e.target.value)}
+                                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-slate-700 placeholder-slate-400"
+                                placeholder="e.g., Standard, Deluxe"
+                            />
+                          </div>
+                          
+                            <div className="space-y-2">
+                              <label className="block text-sm font-semibold text-slate-700">
+                              Per Room Capacity <span className="text-red-500">*</span>
+                            </label>
+                              <div className="relative">
+                            <input
+                              type="number"
+                              min="1"
+                              max="10"
+                              value={roomType.capacity}
+                              onChange={(e) => handleRoomTypeChange(typeIndex, 'capacity', parseInt(e.target.value))}
+                                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-slate-700"
+                                  placeholder="Max occupancy"
+                                />
+                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-500 text-sm">
+                                  👥
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-500 flex items-center">
+                                <Users className="w-3 h-3 mr-1" />
+                                People per room
+                              </p>
+                          </div>
+
+                            <div className="space-y-2">
+                              <label className="block text-sm font-semibold text-slate-700">
+                              Total Room Count <span className="text-red-500">*</span>
+                            </label>
+                              <div className="relative">
+                            <input
+                              type="number"
+                              min="1"
+                                  max="1000"
+                              value={roomType.totalRooms || 0}
+                              onChange={(e) => handleRoomTypeChange(typeIndex, 'totalRooms', parseInt(e.target.value) || 0)}
+                                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-slate-700"
+                              placeholder="Number of rooms"
+                            />
+                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-500 text-sm">
+                                  🏠
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-500 flex items-center">
+                                <Building2 className="w-3 h-3 mr-1" />
+                                Total rooms of this type
+                              </p>
+                          </div>
+                          
+                            <div className="space-y-2">
+                              <label className="block text-sm font-semibold text-slate-700">
+                              Base Rent (₹) <span className="text-red-500">*</span>
+                            </label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 text-sm font-medium">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="100"
+                              value={roomType.rentAmount}
+                              onChange={(e) => handleRoomTypeChange(typeIndex, 'rentAmount', parseFloat(e.target.value))}
+                                  className="w-full pl-8 pr-3 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-slate-700"
+                              placeholder="Base monthly rent"
+                            />
+                              </div>
+                          </div>
+                        </div>
+
+                          {/* Price & Capacity Summary Cards */}
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Price Summary Card */}
+                            <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-6 border border-amber-200">
+                              <div className="flex items-center space-x-3 mb-4">
+                                <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center">
+                                  <DollarSign className="w-5 h-5 text-white" />
+                                </div>
+                            <div>
+                                  <h6 className="text-lg font-bold text-slate-800">Total Room Price</h6>
+                                  <p className="text-sm text-slate-600">Base + Amenities pricing</p>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-600">Base Rent:</span>
+                                  <span className="font-semibold text-slate-800">₹{(roomType.rentAmount || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-600">Amenities:</span>
+                                  <span className="font-semibold text-slate-800">₹{roomType.amenities.reduce((total, amenity) => total + (amenityPricing[amenity] || 0), 0).toLocaleString()}</span>
+                                </div>
+                                <div className="border-t border-amber-200 pt-3">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-lg font-bold text-slate-800">Total Price:</span>
+                                    <span className="text-3xl font-bold text-amber-600">₹{calculateRoomPrice(roomType).toLocaleString()}</span>
+                                  </div>
+                                  <p className="text-sm text-slate-500 text-center mt-1">per month</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Capacity Summary Card */}
+                            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+                              <div className="flex items-center space-x-3 mb-4">
+                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center">
+                                  <Users className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                  <h6 className="text-lg font-bold text-slate-800">Capacity Summary</h6>
+                                  <p className="text-sm text-slate-600">Room occupancy details</p>
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-600">Total Rooms:</span>
+                                  <span className="font-semibold text-slate-800">{roomType.totalRooms || 0}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-600">Per Room Capacity:</span>
+                                  <span className="font-semibold text-slate-800">{roomType.capacity || 0} people</span>
+                                </div>
+                                <div className="border-t border-blue-200 pt-3">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-lg font-bold text-slate-800">Total Capacity:</span>
+                                    <span className="text-2xl font-bold text-blue-600">{(roomType.totalRooms || 0) * (roomType.capacity || 0)}</span>
+                                </div>
+                                  <p className="text-sm text-slate-500 text-center mt-1">people can be accommodated</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                          {/* Room-Specific Amenities */}
+                          <div className="bg-slate-50 rounded-xl p-6">
+                            <div className="flex items-center space-x-3 mb-4">
+                              <div className="w-8 h-8 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
+                                <Star className="w-4 h-4" />
+                              </div>
+                        <div>
+                                <h6 className="text-lg font-semibold text-slate-800">Room-Specific Amenities</h6>
+                                <p className="text-sm text-slate-600">Select amenities for this room type (price impact shown)</p>
+                              </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                            {(availableAmenities || []).map((amenity) => (
+                                <label key={amenity} className="group relative flex items-center space-x-3 p-3 bg-white rounded-xl border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all duration-200 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={roomType.amenities.includes(amenity)}
+                                  onChange={() => handleRoomTypeAmenityToggle(typeIndex, amenity)}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                                />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-sm font-medium text-slate-700 truncate block">{amenity}</span>
+                                  {amenityPricing[amenity] > 0 && (
+                                      <span className="text-xs text-indigo-600 font-medium">
+                                        +₹{amenityPricing[amenity].toLocaleString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </label>
+                            ))}
+                          </div>
+                            
+                            {roomType.amenities.length === 0 && (
+                              <div className="text-center py-8">
+                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                  <Star className="w-8 h-8 text-slate-400" />
+                                </div>
+                                <p className="text-slate-500 text-sm">No amenities selected for this room type</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {/* Add New Room Type Button */}
+                    <button
+                      type="button"
+                      onClick={addRoomType}
+                      className="w-full flex items-center justify-center space-x-3 p-6 border-2 border-dashed border-indigo-300 text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50 rounded-2xl transition-all duration-200 hover:scale-[1.02] group"
+                    >
+                      <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                        <Plus className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-semibold text-lg">Add New Room Type</div>
+                        <div className="text-sm text-indigo-500">Create additional room configurations</div>
+                      </div>
+                    </button>
+
+                    {/* Enhanced Pricing Summary */}
+                    {(hostelFormData.roomTypes || []).length > 0 && (
+                      <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-6">
+                          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <BarChart3 className="w-5 h-5 text-white" />
+                          </div>
+                          <div>
+                            <h5 className="text-xl font-bold text-slate-800">Pricing Summary</h5>
+                            <p className="text-sm text-slate-600">Complete overview of all room types and pricing</p>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+                        {(hostelFormData.roomTypes || []).map((roomType, index) => (
+                            <div key={index} className="bg-white rounded-xl p-5 border border-green-200 shadow-sm hover:shadow-md transition-shadow">
+                              <div className="flex items-center space-x-3 mb-3">
+                                <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                                  {roomType.name ? roomType.name.charAt(0).toUpperCase() : 'R'}
+                                </div>
+                                <h6 className="font-bold text-slate-800">{roomType.name || `Room Type ${index + 1}`}</h6>
+                              </div>
+                              
+                              <div className="space-y-2 text-sm">
+                              <div className="flex justify-between">
+                                  <span className="text-slate-600">Base Rent:</span>
+                                  <span className="font-medium">₹{(roomType.rentAmount || 0).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-600">Amenities:</span>
+                                  <span className="font-medium">₹{roomType.amenities.reduce((total, amenity) => total + (amenityPricing[amenity] || 0), 0).toLocaleString()}</span>
+                              </div>
+                                <div className="border-t border-slate-200 pt-2 flex justify-between font-bold">
+                                <span className="text-slate-800">Total:</span>
+                                  <span className="text-green-600">₹{calculateRoomPrice(roomType).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between text-xs text-slate-500">
+                                  <span>Rooms:</span>
+                                  <span>{roomType.totalRooms || 0} × {roomType.capacity || 0} people</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                        
+                        <div className="bg-white rounded-xl p-5 border border-green-200">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-green-600">
+                            ₹{(hostelFormData.roomTypes || []).length > 0 ? Math.round(calculateTotalPrice() / (hostelFormData.roomTypes || []).length) : 0}
+                        </div>
+                              <div className="text-sm text-slate-600">Average Room Price</div>
+                      </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-blue-600">
+                                {(hostelFormData.roomTypes || []).reduce((total, roomType) => total + (roomType.totalRooms || 0), 0)}
+                    </div>
+                              <div className="text-sm text-slate-600">Total Rooms</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-purple-600">
+                                {(hostelFormData.roomTypes || []).reduce((total, roomType) => total + ((roomType.totalRooms || 0) * (roomType.capacity || 0)), 0)}
+                              </div>
+                              <div className="text-sm text-slate-600">Total Capacity</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Professional Hostel Rules Section */}
+                <div className="bg-gradient-to-br from-red-50 to-pink-50 rounded-2xl p-6 border border-red-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
+                        <AlertCircle className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-slate-800">Hostel Rules & Policies</h4>
+                        <p className="text-sm text-slate-600">Define clear guidelines and policies for your hostel</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm text-slate-500 bg-white px-3 py-1 rounded-full border border-red-200">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                      <span>{hostelFormData.rules.length} Rules</span>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {/* Quick Rule Templates */}
+                    <div className="bg-white rounded-xl p-5 border border-red-200 shadow-sm">
+                      <div className="flex items-center space-x-3 mb-4">
+                        <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <h5 className="text-lg font-semibold text-slate-800">Quick Rule Templates</h5>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {[
+                          { icon: '🕐', text: 'Curfew time: 10:00 PM', category: 'Timing' },
+                          { icon: '🚫', text: 'No smoking in rooms', category: 'Health' },
+                          { icon: '🔇', text: 'Maintain silence after 11 PM', category: 'Quiet Hours' },
+                          { icon: '🧹', text: 'Keep rooms clean and tidy', category: 'Cleanliness' },
+                          { icon: '👥', text: 'No overnight guests allowed', category: 'Visitors' },
+                          { icon: '💰', text: 'Monthly rent due by 5th', category: 'Payment' }
+                        ].map((template, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => {
+                              if (!hostelFormData.rules.includes(template.text)) {
+                                setHostelFormData({
+                                  ...hostelFormData, 
+                                  rules: [...hostelFormData.rules, template.text]
+                                });
+                              }
+                            }}
+                            className="group flex items-center space-x-3 p-3 bg-gradient-to-r from-slate-50 to-white rounded-xl border border-slate-200 hover:border-red-300 hover:shadow-md transition-all duration-200 text-left"
+                          >
+                            <div className="text-2xl">{template.icon}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-slate-700 truncate">{template.text}</div>
+                              <div className="text-xs text-slate-500">{template.category}</div>
+                            </div>
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Plus className="w-4 h-4 text-red-500" />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Rules List */}
+                    <div className="bg-white rounded-xl border border-red-200 shadow-sm overflow-hidden">
+                      <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-4 border-b border-slate-200">
+                        <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-red-100 text-red-600 rounded-lg flex items-center justify-center">
+                      <AlertCircle className="w-4 h-4" />
+                    </div>
+                          <div>
+                            <h5 className="text-lg font-semibold text-slate-800">Current Rules</h5>
+                            <p className="text-sm text-slate-600">Manage your hostel's rules and policies</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="p-6">
+                        {hostelFormData.rules.length === 0 ? (
+                          <div className="text-center py-12">
+                            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <AlertCircle className="w-8 h-8 text-slate-400" />
+                            </div>
+                            <h6 className="text-lg font-medium text-slate-600 mb-2">No Rules Added Yet</h6>
+                            <p className="text-slate-500">Add rules to establish clear guidelines for your hostel residents.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                    {hostelFormData.rules.map((rule, index) => (
+                              <div key={index} className="group bg-gradient-to-r from-slate-50 to-white rounded-xl p-4 border border-slate-200 hover:border-red-300 hover:shadow-md transition-all duration-200">
+                                <div className="flex items-start space-x-4">
+                                  <div className="flex-shrink-0">
+                                    <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-pink-600 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md">
+                          {index + 1}
+                        </div>
+                                  </div>
+                                  
+                                  <div className="flex-1 min-w-0">
+                                    <div className="relative">
+                        <input
+                          type="text"
+                          value={rule}
+                          onChange={(e) => {
+                            const newRules = [...hostelFormData.rules];
+                            newRules[index] = e.target.value;
+                            setHostelFormData({...hostelFormData, rules: newRules});
+                          }}
+                                        className="w-full px-4 py-3 text-slate-700 bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white rounded-lg transition-all placeholder-slate-400"
+                                        placeholder="Enter a clear and specific rule..."
+                                        style={{ fontSize: '16px' }} // Prevents zoom on mobile
+                                      />
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between mt-2">
+                                      <div className="flex items-center space-x-2 text-xs text-slate-500">
+                                        <span>Rule #{index + 1}</span>
+                                        <span>•</span>
+                                        <span>{rule.length} characters</span>
+                                      </div>
+                                      
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newRules = hostelFormData.rules.filter((_, i) => i !== index);
+                            setHostelFormData({...hostelFormData, rules: newRules});
+                          }}
+                                        className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200"
+                                        title="Remove this rule"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                                    </div>
+                                  </div>
+                                </div>
+                      </div>
+                    ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Add New Rule Button */}
+                    <button
+                      type="button"
+                      onClick={() => setHostelFormData({...hostelFormData, rules: [...hostelFormData.rules, '']})}
+                      className="w-full flex items-center justify-center space-x-3 p-6 border-2 border-dashed border-red-300 text-red-600 hover:border-red-400 hover:bg-red-50 rounded-2xl transition-all duration-200 hover:scale-[1.02] group"
+                    >
+                      <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-pink-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                        <Plus className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-semibold text-lg">Add New Rule</div>
+                        <div className="text-sm text-red-500">Create a custom rule for your hostel</div>
+                      </div>
+                    </button>
+
+                    {/* Rules Guidelines */}
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-200">
+                      <div className="flex items-start space-x-3">
+                        <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <AlertCircle className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h6 className="font-semibold text-slate-800 mb-2">Rules Guidelines</h6>
+                          <ul className="space-y-1 text-sm text-slate-600">
+                            <li className="flex items-start space-x-2">
+                              <span className="text-blue-500 mt-1">•</span>
+                              <span>Keep rules clear, specific, and easy to understand</span>
+                            </li>
+                            <li className="flex items-start space-x-2">
+                              <span className="text-blue-500 mt-1">•</span>
+                              <span>Include consequences for rule violations</span>
+                            </li>
+                            <li className="flex items-start space-x-2">
+                              <span className="text-blue-500 mt-1">•</span>
+                              <span>Consider safety, respect, and community harmony</span>
+                            </li>
+                            <li className="flex items-start space-x-2">
+                              <span className="text-blue-500 mt-1">•</span>
+                              <span>Review and update rules regularly based on feedback</span>
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Form Actions */}
+                <div className="flex justify-end space-x-4 pt-6 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowHostelModal(false);
+                      setEditingHostel(null);
+                      setHostelFormData({
+                        name: '',
+                        address: '',
+                        city: '',
+                        state: '',
+                        pincode: '',
+                        contact_phone: '',
+                        contact_email: '',
+                        capacity: '',
+                        amenities: [],
+                        rules: [],
+                        roomTypes: [
+                          {
+                            type: 'standard',
+                            name: 'Standard',
+                            capacity: 1,
+                            rentAmount: 0,
+                            amenities: []
+                          },
+                          {
+                            type: 'deluxe',
+                            name: 'Deluxe',
+                            capacity: 2,
+                            rentAmount: 0,
+                            amenities: []
+                          },
+                          {
+                            type: 'premium',
+                            name: 'Premium',
+                            capacity: 2,
+                            rentAmount: 0,
+                            amenities: []
+                          },
+                          {
+                            type: 'suite',
+                            name: 'Suite',
+                            capacity: 4,
+                            rentAmount: 0,
+                            amenities: []
+                          }
+                        ]
+                      });
+                      setFormErrors({});
+                      setLocation(null);
+                    }}
+                    className="px-8 py-3 text-slate-600 hover:text-slate-800 font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || Object.keys(formErrors).length > 0}
+                    className="px-8 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-medium rounded-xl hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+                  >
+                    {isSubmitting ? (
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Saving...</span>
+                      </div>
+                    ) : (
+                      editingHostel ? 'Update Hostel' : 'Create Hostel'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

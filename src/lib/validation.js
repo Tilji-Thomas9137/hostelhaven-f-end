@@ -29,7 +29,37 @@ export const registerSchema = z.object({
   phone: z
     .string()
     .min(1, 'Phone number is required')
-    .regex(/^[6-9]\d{9}$/, 'Phone must be 10 digits starting with 6-9'),
+    .regex(/^[6-9]\d{9}$/, 'Phone must be 10 digits starting with 6-9')
+    .refine((val) => {
+      // Check for invalid patterns
+      if (/^(\d)\1{9}$/.test(val)) {
+        return false; // All same digits (1111111111, 9999999999, etc.)
+      }
+      if (/^(\d{2})\1{4}$/.test(val)) {
+        return false; // Repeated patterns like 1212121212
+      }
+      if (/^(\d{3})\1{2}\d$/.test(val)) {
+        return false; // Patterns like 1231231234
+      }
+      if (/^(\d{4})\1{1}\d{2}$/.test(val)) {
+        return false; // Patterns like 1234123456
+      }
+      if (/^(\d{5})\1$/.test(val)) {
+        return false; // Patterns like 1234512345
+      }
+      // Check for sequential patterns
+      if (/^(0123456789|9876543210)$/.test(val)) {
+        return false; // Sequential ascending/descending
+      }
+      // Check for common test/invalid patterns
+      if (/^(0000000000|1111111111|2222222222|3333333333|4444444444|5555555555|6666666666|7777777777|8888888888|9999999999)$/.test(val)) {
+        return false; // All same digits
+      }
+      if (/^(1234567890|0987654321)$/.test(val)) {
+        return false; // Sequential patterns
+      }
+      return true;
+    }, 'Please enter a valid mobile number'),
   
   role: z
     .string()
@@ -129,8 +159,23 @@ export const leaveRequestSchema = z.object({
     .trim()
     .optional()
     .transform((v) => (v === '' ? undefined : v))
-    .refine((v) => v === undefined || /^[6-9]\d{9}$/.test(v), {
-      message: 'Phone must be 10 digits starting with 6-9'
+    .refine((v) => {
+      if (v === undefined) return true;
+      if (!/^[6-9]\d{9}$/.test(v)) return false;
+      // Check for invalid patterns
+      if (/^(\d)\1{9}$/.test(v)) return false; // All same digits (1111111111, 9999999999, etc.)
+      if (/^(\d{2})\1{4}$/.test(v)) return false; // Repeated patterns like 1212121212
+      if (/^(\d{3})\1{2}\d$/.test(v)) return false; // Patterns like 1231231234
+      if (/^(\d{4})\1{1}\d{2}$/.test(v)) return false; // Patterns like 1234123456
+      if (/^(\d{5})\1$/.test(v)) return false; // Patterns like 1234512345
+      // Check for sequential patterns
+      if (/^(0123456789|9876543210)$/.test(v)) return false; // Sequential ascending/descending
+      // Check for common test/invalid patterns
+      if (/^(0000000000|1111111111|2222222222|3333333333|4444444444|5555555555|6666666666|7777777777|8888888888|9999999999)$/.test(v)) return false; // All same digits
+      if (/^(1234567890|0987654321)$/.test(v)) return false; // Sequential patterns
+      return true;
+    }, {
+      message: 'Please enter a valid mobile number'
     })
 }).refine((data) => {
   if (!data.start_date || !data.end_date) return true;
@@ -155,7 +200,9 @@ export const roomSchema = z.object({
     .min(1, 'Floor is required')
     .refine((v) => /^\d+$/.test(v) && parseInt(v, 10) >= 0, 'Floor must be a non-negative integer'),
   room_type: z
-    .enum(['standard', 'deluxe', 'suite'], { required_error: 'Room type is required' }),
+    .string()
+    .min(1, 'Room type is required')
+    .max(50, 'Room type name is too long'),
   capacity: z
     .string()
     .min(1, 'Capacity is required')
@@ -177,5 +224,194 @@ export const profileUpdateSchema = z.object({
   phone: z
     .string()
     .optional()
-    .refine((v) => !v || /^[6-9]\d{9}$/.test(v), 'Phone must be 10 digits starting with 6-9')
+    .refine((v) => {
+      if (!v) return true;
+      if (!/^[6-9]\d{9}$/.test(v)) return false;
+      // Check for invalid patterns
+      if (/^(\d)\1{9}$/.test(v)) return false; // All same digits (1111111111, 9999999999, etc.)
+      if (/^(\d{2})\1{4}$/.test(v)) return false; // Repeated patterns like 1212121212
+      if (/^(\d{3})\1{2}\d$/.test(v)) return false; // Patterns like 1231231234
+      if (/^(\d{4})\1{1}\d{2}$/.test(v)) return false; // Patterns like 1234123456
+      if (/^(\d{5})\1$/.test(v)) return false; // Patterns like 1234512345
+      // Check for sequential patterns
+      if (/^(0123456789|9876543210)$/.test(v)) return false; // Sequential ascending/descending
+      // Check for common test/invalid patterns
+      if (/^(0000000000|1111111111|2222222222|3333333333|4444444444|5555555555|6666666666|7777777777|8888888888|9999999999)$/.test(v)) return false; // All same digits
+      if (/^(1234567890|0987654321)$/.test(v)) return false; // Sequential patterns
+      return true;
+    }, 'Please enter a valid mobile number')
+});
+
+// Student profile validation schema
+export const studentProfileSchema = z.object({
+  full_name: z
+    .string()
+    .min(1, 'Full name is required')
+    .min(2, 'Full name must be at least 2 characters')
+    .max(50, 'Full name must be less than 50 characters')
+    .regex(/^[a-zA-Z\s]+$/, 'Full name can only contain letters and spaces'),
+  
+  phone: z
+    .string()
+    .min(1, 'Phone number is required')
+    .regex(/^[6-9]\d{9}$/, 'Phone must be 10 digits starting with 6-9')
+    .refine((val) => {
+      // Check for invalid patterns
+      if (/^(\d)\1{9}$/.test(val)) {
+        return false; // All same digits (1111111111, 9999999999, etc.)
+      }
+      if (/^(\d{2})\1{4}$/.test(val)) {
+        return false; // Repeated patterns like 1212121212
+      }
+      if (/^(\d{3})\1{2}\d$/.test(val)) {
+        return false; // Patterns like 1231231234
+      }
+      if (/^(\d{4})\1{1}\d{2}$/.test(val)) {
+        return false; // Patterns like 1234123456
+      }
+      if (/^(\d{5})\1$/.test(val)) {
+        return false; // Patterns like 1234512345
+      }
+      // Check for sequential patterns
+      if (/^(0123456789|9876543210)$/.test(val)) {
+        return false; // Sequential ascending/descending
+      }
+      // Check for common test/invalid patterns
+      if (/^(0000000000|1111111111|2222222222|3333333333|4444444444|5555555555|6666666666|7777777777|8888888888|9999999999)$/.test(val)) {
+        return false; // All same digits
+      }
+      if (/^(1234567890|0987654321)$/.test(val)) {
+        return false; // Sequential patterns
+      }
+      return true;
+    }, 'Please enter a valid mobile number'),
+  
+  admission_number: z
+    .string()
+    .min(1, 'Admission number is required')
+    .min(3, 'Admission number must be at least 3 characters')
+    .max(20, 'Admission number must be less than 20 characters')
+    .regex(/^[A-Za-z0-9]+$/, 'Admission number can only contain letters and numbers'),
+  
+  course: z
+    .string()
+    .min(1, 'Course is required')
+    .min(2, 'Course must be at least 2 characters')
+    .max(50, 'Course must be less than 50 characters'),
+  
+  batch_year: z
+    .string()
+    .min(1, 'Batch year is required')
+    .regex(/^(19|20)\d{2}$/, 'Batch year must be a valid year (1900-2099)')
+    .refine((v) => {
+      const year = parseInt(v);
+      const currentYear = new Date().getFullYear();
+      return year >= 1900 && year <= currentYear + 10;
+    }, 'Batch year must be between 1900 and ' + (new Date().getFullYear() + 10)),
+  
+  date_of_birth: z
+    .string()
+    .optional()
+    .refine((v) => {
+      if (!v) return true;
+      const date = new Date(v);
+      const today = new Date();
+      const age = today.getFullYear() - date.getFullYear();
+      return age >= 16 && age <= 100;
+    }, 'Age must be between 16 and 100 years'),
+  
+  gender: z
+    .string()
+    .min(1, 'Gender is required')
+    .refine((v) => ['male', 'female', 'other'].includes(v), 'Please select a valid gender'),
+  
+  address: z
+    .string()
+    .optional()
+    .refine((v) => !v || v.length >= 5, 'Address must be at least 5 characters'),
+  
+  city: z
+    .string()
+    .optional()
+    .refine((v) => !v || v.length >= 2, 'City must be at least 2 characters'),
+  
+  state: z
+    .string()
+    .optional()
+    .refine((v) => !v || v.length >= 2, 'State must be at least 2 characters'),
+  
+  country: z
+    .string()
+    .optional()
+    .refine((v) => !v || v.length >= 2, 'Country must be at least 2 characters'),
+  
+  pincode: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^\d{6}$/.test(v), 'Pincode must be exactly 6 digits'),
+  
+  emergency_contact_name: z
+    .string()
+    .optional()
+    .refine((v) => !v || v.length >= 2, 'Emergency contact name must be at least 2 characters'),
+  
+  emergency_contact_phone: z
+    .string()
+    .optional()
+    .refine((v) => {
+      if (!v) return true;
+      if (!/^[6-9]\d{9}$/.test(v)) return false;
+      // Check for invalid patterns
+      if (/^(\d)\1{9}$/.test(v)) return false; // All same digits (1111111111, 9999999999, etc.)
+      if (/^(\d{2})\1{4}$/.test(v)) return false; // Repeated patterns like 1212121212
+      if (/^(\d{3})\1{2}\d$/.test(v)) return false; // Patterns like 1231231234
+      if (/^(\d{4})\1{1}\d{2}$/.test(v)) return false; // Patterns like 1234123456
+      if (/^(\d{5})\1$/.test(v)) return false; // Patterns like 1234512345
+      // Check for sequential patterns
+      if (/^(0123456789|9876543210)$/.test(v)) return false; // Sequential ascending/descending
+      // Check for common test/invalid patterns
+      if (/^(0000000000|1111111111|2222222222|3333333333|4444444444|5555555555|6666666666|7777777777|8888888888|9999999999)$/.test(v)) return false; // All same digits
+      if (/^(1234567890|0987654321)$/.test(v)) return false; // Sequential patterns
+      return true;
+    }, 'Please enter a valid mobile number'),
+  
+  parent_name: z
+    .string()
+    .optional()
+    .refine((v) => !v || v.length >= 2, 'Parent name must be at least 2 characters'),
+  
+  parent_phone: z
+    .string()
+    .optional()
+    .refine((v) => {
+      if (!v) return true;
+      if (!/^[6-9]\d{9}$/.test(v)) return false;
+      // Check for invalid patterns
+      if (/^(\d)\1{9}$/.test(v)) return false; // All same digits (1111111111, 9999999999, etc.)
+      if (/^(\d{2})\1{4}$/.test(v)) return false; // Repeated patterns like 1212121212
+      if (/^(\d{3})\1{2}\d$/.test(v)) return false; // Patterns like 1231231234
+      if (/^(\d{4})\1{1}\d{2}$/.test(v)) return false; // Patterns like 1234123456
+      if (/^(\d{5})\1$/.test(v)) return false; // Patterns like 1234512345
+      // Check for sequential patterns
+      if (/^(0123456789|9876543210)$/.test(v)) return false; // Sequential ascending/descending
+      // Check for common test/invalid patterns
+      if (/^(0000000000|1111111111|2222222222|3333333333|4444444444|5555555555|6666666666|7777777777|8888888888|9999999999)$/.test(v)) return false; // All same digits
+      if (/^(1234567890|0987654321)$/.test(v)) return false; // Sequential patterns
+      return true;
+    }, 'Please enter a valid mobile number'),
+  
+  parent_email: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), 'Please enter a valid email address'),
+  
+  aadhar_number: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^\d{12}$/.test(v), 'Aadhar number must be exactly 12 digits'),
+  
+  blood_group: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^(A|B|AB|O)[+-]$/.test(v), 'Please select a valid blood group')
 });

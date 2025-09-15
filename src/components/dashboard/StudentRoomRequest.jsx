@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
 import { useNotification } from '../../contexts/NotificationContext';
 import { supabase } from '../../lib/supabase';
 import ConfirmationModal from '../ui/ConfirmationModal';
@@ -8,21 +7,13 @@ import {
   Users, 
   UserCheck,
   Clock,
-  AlertCircle,
   CheckCircle,
   Plus,
   Search,
-  MapPin,
-  Calendar,
-  DollarSign,
   Home,
   User,
-  Bell,
   Eye,
-  Edit,
-  Trash2,
-  RefreshCw,
-  Info
+  RefreshCw
 } from 'lucide-react';
 
 const StudentRoomRequest = () => {
@@ -34,12 +25,9 @@ const StudentRoomRequest = () => {
   const [rooms, setRooms] = useState([]);
   const [myRequest, setMyRequest] = useState(null);
   const [myAllocation, setMyAllocation] = useState(null);
-  const [availableAmenities, setAvailableAmenities] = useState([]);
   
   // UI states
-  const [showRequestModal, setShowRequestModal] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
-  const [prefilledData, setPrefilledData] = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [requestToCancel, setRequestToCancel] = useState(null);
   
@@ -53,30 +41,6 @@ const StudentRoomRequest = () => {
     fetchAllData();
   }, []);
 
-  // Utility function to clean form data for database
-  const cleanFormDataForSubmission = (data) => {
-    const cleaned = {
-      preferred_room_type: data.preferred_room_type && data.preferred_room_type.trim() !== '' 
-        ? data.preferred_room_type.trim() 
-        : null,
-      preferred_floor: data.preferred_floor && data.preferred_floor.trim() !== '' 
-        ? parseInt(data.preferred_floor.trim()) 
-        : null,
-      preferred_amenities: data.preferred_amenities && Array.isArray(data.preferred_amenities) && data.preferred_amenities.length > 0
-        ? data.preferred_amenities.filter(amenity => amenity && amenity.trim() !== '')
-        : null,
-      special_requirements: data.special_requirements && data.special_requirements.trim() !== '' 
-        ? data.special_requirements.trim() 
-        : null
-    };
-
-    // Additional validation for floor number
-    if (cleaned.preferred_floor !== null && (isNaN(cleaned.preferred_floor) || cleaned.preferred_floor < 0)) {
-      cleaned.preferred_floor = null;
-    }
-
-    return cleaned;
-  };
 
 
   const fetchAllData = async () => {
@@ -85,8 +49,7 @@ const StudentRoomRequest = () => {
       await Promise.all([
         fetchRooms(),
         fetchMyRequest(),
-        fetchMyAllocation(),
-        fetchAvailableAmenities()
+        fetchMyAllocation()
       ]);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -108,35 +71,6 @@ const StudentRoomRequest = () => {
     }
   };
 
-  const fetchAvailableAmenities = async () => {
-    try {
-      const response = await fetch('http://localhost:3002/api/room-allocation/rooms');
-      if (response.ok) {
-        const result = await response.json();
-        const rooms = result.data.rooms || [];
-        
-        // Extract unique amenities from all rooms
-        const amenitiesSet = new Set();
-        rooms.forEach(room => {
-          if (room.amenities && Array.isArray(room.amenities)) {
-            room.amenities.forEach(amenity => {
-              if (amenity && amenity.trim()) {
-                amenitiesSet.add(amenity.trim());
-              }
-            });
-          }
-        });
-        
-        // Convert to sorted array
-        const uniqueAmenities = Array.from(amenitiesSet).sort();
-        setAvailableAmenities(uniqueAmenities);
-      }
-    } catch (error) {
-      console.error('Error fetching amenities:', error);
-      // Fallback to default amenities if API fails
-      setAvailableAmenities(['WiFi', 'Air Conditioning', 'Heating', 'Private Bathroom', 'Shared Bathroom', 'Kitchen', 'Laundry', 'Balcony']);
-    }
-  };
 
   const fetchMyRequest = async () => {
     try {
@@ -197,7 +131,7 @@ const StudentRoomRequest = () => {
     }
   };
 
-  const handleCreateRequest = async (formData) => {
+  const handleRequestRoom = async (room) => {
     setIsSubmitting(true);
     let errorNotificationShown = false;
     
@@ -208,11 +142,15 @@ const StudentRoomRequest = () => {
         return;
       }
 
-      // Clean form data - convert empty strings to null for database
-      const cleanedFormData = cleanFormDataForSubmission(formData);
+      // Create a simple request with the specific room details
+      const requestData = {
+        preferred_room_type: room.room_type,
+        preferred_floor: room.floor,
+        special_requirements: `Requesting Room ${room.room_number} specifically`
+      };
 
-      console.log('Original form data:', formData);
-      console.log('Cleaned form data:', cleanedFormData);
+      console.log('Requesting room:', room);
+      console.log('Request data:', requestData);
 
       const response = await fetch('http://localhost:3002/api/room-allocation/request', {
         method: 'POST',
@@ -220,14 +158,12 @@ const StudentRoomRequest = () => {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(cleanedFormData)
+        body: JSON.stringify(requestData)
       });
 
       if (response.ok) {
-        setShowRequestModal(false);
-        setPrefilledData(null);
         await fetchMyRequest();
-        showNotification('Your room request has been submitted successfully! We will review your request and notify you of the status.', 'success', 4000);
+        showNotification(`Room request for Room ${room.room_number} submitted successfully! We will review your request and notify you of the status.`, 'success', 4000);
       } else {
         let errorMessage = 'Request submission failed';
         try {
@@ -419,14 +355,14 @@ const StudentRoomRequest = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-medium text-slate-800">Need to submit a new request?</h3>
-                <p className="text-slate-600">You can submit a new room request or modify your preferences.</p>
+                <p className="text-slate-600">Browse available rooms below and click "Request This Room" on your preferred room.</p>
               </div>
               <button
-                onClick={() => setShowRequestModal(true)}
+                onClick={() => setActiveTab('rooms')}
                 className="px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors flex items-center space-x-2"
               >
-                <Plus className="w-4 h-4" />
-                <span>Submit New Request</span>
+                <Eye className="w-4 h-4" />
+                <span>Browse Rooms</span>
               </button>
             </div>
           </div>
@@ -438,19 +374,19 @@ const StudentRoomRequest = () => {
         <h2 className="text-xl font-semibold text-slate-800 mb-6">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button
-            onClick={() => setShowRequestModal(true)}
+            onClick={() => setActiveTab('rooms')}
             className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
           >
-            <Plus className="w-5 h-5 text-blue-600" />
-            <span className="font-medium text-blue-800">Submit New Request</span>
+            <Eye className="w-5 h-5 text-blue-600" />
+            <span className="font-medium text-blue-800">Browse Available Rooms</span>
           </button>
           
           <button
-            onClick={() => setActiveTab('rooms')}
+            onClick={fetchAllData}
             className="flex items-center space-x-3 p-4 bg-green-50 hover:bg-green-100 rounded-xl transition-colors"
           >
-            <Eye className="w-5 h-5 text-green-600" />
-            <span className="font-medium text-green-800">View Available Rooms</span>
+            <RefreshCw className="w-5 h-5 text-green-600" />
+            <span className="font-medium text-green-800">Refresh Data</span>
           </button>
         </div>
       </div>
@@ -472,17 +408,13 @@ const StudentRoomRequest = () => {
               className="pl-10 pr-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
             />
           </div>
-          <select
+          <input
+            type="text"
+            placeholder="Filter by room type..."
             value={roomTypeFilter}
             onChange={(e) => setRoomTypeFilter(e.target.value)}
             className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-          >
-            <option value="">All Types</option>
-            <option value="standard">Standard</option>
-            <option value="deluxe">Deluxe</option>
-            <option value="premium">Premium</option>
-            <option value="suite">Suite</option>
-          </select>
+          />
         </div>
       </div>
       
@@ -576,23 +508,35 @@ const StudentRoomRequest = () => {
               </div>
             )}
             
-            {room.is_available && !myRequest && (
-              <div className="mt-4 pt-4 border-t border-slate-200">
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              {room.is_available && !myRequest ? (
                 <button
-                  onClick={() => {
-                    setPrefilledData({
-                      preferred_room_type: room.room_type,
-                      preferred_floor: room.floor,
-                      special_requirements: `Requesting Room ${room.room_number} specifically`
-                    });
-                    setShowRequestModal(true);
-                  }}
-                  className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
+                  onClick={() => handleRequestRoom(room)}
+                  disabled={isSubmitting}
+                  className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
                 >
-                  Request This Room
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Requesting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      <span>Request This Room</span>
+                    </>
+                  )}
                 </button>
-              </div>
-            )}
+              ) : myRequest ? (
+                <div className="text-center py-2">
+                  <p className="text-sm text-slate-500">You already have a pending request</p>
+                </div>
+              ) : (
+                <div className="text-center py-2">
+                  <p className="text-sm text-slate-500">Room not available</p>
+                </div>
+              )}
+            </div>
           </div>
           ));
         })()}
@@ -617,238 +561,6 @@ const StudentRoomRequest = () => {
     }
   };
 
-  const RequestModal = () => {
-    const [formData, setFormData] = useState({
-      preferred_room_type: prefilledData?.preferred_room_type || '',
-      preferred_floor: prefilledData?.preferred_floor || '',
-      preferred_amenities: prefilledData?.preferred_amenities || [],
-      special_requirements: prefilledData?.special_requirements || ''
-    });
-    const [errors, setErrors] = useState({});
-
-    const validateForm = () => {
-      const newErrors = {};
-      
-      // Floor validation
-      if (formData.preferred_floor && formData.preferred_floor.trim() !== '') {
-        const floorNum = parseInt(formData.preferred_floor);
-        if (isNaN(floorNum) || floorNum < 0) {
-          newErrors.preferred_floor = 'Floor must be a number greater than or equal to 0';
-        }
-      }
-      
-      // Special requirements length validation
-      if (formData.special_requirements && formData.special_requirements.length > 500) {
-        newErrors.special_requirements = 'Special requirements must be less than 500 characters';
-      }
-      
-      setErrors(newErrors);
-      return Object.keys(newErrors).length === 0;
-    };
-
-    const handleInputChange = (e) => {
-      const { name, value } = e.target;
-      setFormData(prev => ({
-        ...prev,
-        [name]: value
-      }));
-      
-      // Clear error when user starts typing
-      if (errors[name]) {
-        setErrors(prev => ({
-          ...prev,
-          [name]: ''
-        }));
-      }
-    };
-
-    const handleAmenityChange = (amenity) => {
-      setFormData(prev => ({
-        ...prev,
-        preferred_amenities: prev.preferred_amenities.includes(amenity)
-          ? prev.preferred_amenities.filter(a => a !== amenity)
-          : [...prev.preferred_amenities, amenity]
-      }));
-    };
-
-    const handleSubmit = async (e) => {
-      e.preventDefault();
-      if (validateForm()) {
-        try {
-          await handleCreateRequest(formData);
-          // Only reset form if submission was successful
-          setFormData({
-            preferred_room_type: '',
-            preferred_floor: '',
-            preferred_amenities: [],
-            special_requirements: ''
-          });
-          setErrors({});
-          setPrefilledData(null);
-        } catch (error) {
-          console.error('Form submission error:', error);
-          // Error notification is already handled in handleCreateRequest
-          // Don't reset form if there was an error
-        }
-      }
-    };
-
-    const handleCloseModal = () => {
-      setShowRequestModal(false);
-      setPrefilledData(null);
-      setFormData({
-        preferred_room_type: '',
-        preferred_floor: '',
-        preferred_amenities: [],
-        special_requirements: ''
-      });
-      setErrors({});
-    };
-
-    if (!showRequestModal) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 relative">
-          {/* Close Button */}
-          <button
-            onClick={handleCloseModal}
-            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
-            disabled={isSubmitting}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          
-          <h3 className="text-xl font-semibold text-slate-800 mb-4 pr-8">Submit New Room Request</h3>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Preferred Room Type</label>
-              <select
-                name="preferred_room_type"
-                value={formData.preferred_room_type}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-              >
-                <option value="">Any Type</option>
-                <option value="standard">Standard</option>
-                <option value="deluxe">Deluxe</option>
-                <option value="premium">Premium</option>
-                <option value="suite">Suite</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Preferred Floor</label>
-              <select
-                name="preferred_floor"
-                value={formData.preferred_floor}
-                onChange={handleInputChange}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                  errors.preferred_floor ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'
-                }`}
-              >
-                <option value="">Any Floor</option>
-                <option value="1">Floor 1</option>
-                <option value="2">Floor 2</option>
-                <option value="3">Floor 3</option>
-                <option value="4">Floor 4</option>
-                <option value="5">Floor 5</option>
-              </select>
-              {errors.preferred_floor && (
-                <p className="mt-1 text-sm text-red-600">{errors.preferred_floor}</p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Preferred Amenities
-              </label>
-              <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto border border-slate-300 rounded-lg p-3">
-                {availableAmenities.length > 0 ? (
-                  availableAmenities.map((amenity) => (
-                    <label key={amenity} className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.preferred_amenities.includes(amenity)}
-                        onChange={() => handleAmenityChange(amenity)}
-                        className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500"
-                      />
-                      <span className="text-sm text-slate-700">{amenity}</span>
-                    </label>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500 col-span-2">No amenities available</p>
-                )}
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Special Requirements
-                <span className="text-slate-500 text-xs ml-1">
-                  ({formData.special_requirements.length}/500 characters)
-                </span>
-              </label>
-              <textarea
-                name="special_requirements"
-                value={formData.special_requirements}
-                onChange={handleInputChange}
-                rows={3}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                  errors.special_requirements ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'
-                }`}
-                placeholder="Any special requirements or preferences..."
-                maxLength={500}
-              />
-              {errors.special_requirements && (
-                <p className="mt-1 text-sm text-red-600">{errors.special_requirements}</p>
-              )}
-            </div>
-            
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-start space-x-3">
-                <Info className="w-5 h-5 text-blue-600 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-medium text-blue-800">Priority System</h4>
-                  <p className="text-sm text-blue-700 mt-1">
-                    Your request will be processed based on request time, role, and account seniority. 
-                    Earlier requests get higher priority.
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
-                disabled={isSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Submitting...
-                  </>
-                ) : (
-                  'Submit New Request'
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  };
 
   if (isLoading) {
     return (
@@ -870,15 +582,6 @@ const StudentRoomRequest = () => {
           <p className="text-slate-600">Request and manage your room allocation</p>
         </div>
         <div className="flex items-center space-x-3">
-          {!myRequest && (
-            <button
-              onClick={() => setShowRequestModal(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Room Allocation</span>
-            </button>
-          )}
           <button
             onClick={fetchAllData}
             className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors"
@@ -912,9 +615,6 @@ const StudentRoomRequest = () => {
       {/* Content */}
       {renderContent()}
 
-      {/* Modals */}
-      <RequestModal />
-      
       {/* Confirmation Modal */}
       <ConfirmationModal
         isOpen={showCancelModal}

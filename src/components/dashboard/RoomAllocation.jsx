@@ -902,16 +902,15 @@ const RoomAllocation = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Room Type</label>
-              <select
-                {...register('room_type')}
+              <label className="block text-sm font-medium text-slate-700 mb-1">Room Type *</label>
+              <input
+                type="text"
+                {...register('room_type', { required: 'Room type is required' })}
                 className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.room_type ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-              >
-                <option value="standard">Standard</option>
-                <option value="deluxe">Deluxe</option>
-                <option value="premium">Premium</option>
-                <option value="suite">Suite</option>
-              </select>
+                placeholder="e.g., Standard, Deluxe, Premium, Suite, Economy, Luxury, etc."
+              />
+              {errors.room_type && <p className="mt-1 text-sm text-red-600">{errors.room_type.message}</p>}
+              <p className="mt-1 text-xs text-slate-500">Enter any custom room type name</p>
             </div>
             
             <div className="grid grid-cols-2 gap-4">

@@ -30,7 +30,8 @@ import {
   Search,
   Filter,
   Download,
-  UserCheck
+  UserCheck,
+  Loader2
 } from 'lucide-react';
 
 const StudentDashboard = () => {
@@ -175,12 +176,15 @@ const StudentDashboard = () => {
           users!rooms_room_id_fkey(id, full_name, email)
         `)
         .eq('users.email', session.user.email)
-        .single();
+        .maybeSingle();
 
       if (roomError) {
         console.error('Error fetching room details:', roomError);
-        // If table doesn't exist, just set null
-        if (roomError.message?.includes('relation') && roomError.message?.includes('does not exist')) {
+        // If table doesn't exist or no rows found, set null
+        if (
+          roomError.code === 'PGRST116' ||
+          (roomError.message?.includes('relation') && roomError.message?.includes('does not exist'))
+        ) {
           setRoomDetails(null);
           return;
         }
@@ -373,10 +377,14 @@ const StudentDashboard = () => {
           rooms(room_number, floor, room_type)
         `)
         .eq('user_id', session.user.id)
-        .single();
+        .maybeSingle();
       
       if (profileError) {
         console.error('Error fetching student profile:', profileError);
+        if (profileError.code === 'PGRST116') {
+          setHasProfile(false);
+          return;
+        }
         setHasProfile(false);
         return;
       }
@@ -554,24 +562,12 @@ const StudentDashboard = () => {
 
     // Check if profile is incomplete and restrict access
     const isProfileIncomplete = hasProfile === false || profileStatus === 'incomplete';
-    const isProfileLoading = hasProfile === null || profileStatus === null;
+    const isProfileLoading = false; // Avoid indefinite loader; show explicit cards instead
 
     return (
       <div className="space-y-8">
         {/* Profile Completion Alert */}
-        {isProfileLoading && (
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-800">Loading Profile Status</h3>
-                <p className="text-slate-600">Please wait while we check your profile completion status...</p>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Loader removed to prevent indefinite state */}
 
         {hasProfile === false && (
           <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-2xl p-6">
@@ -1201,41 +1197,102 @@ const StudentDashboard = () => {
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setIsSavingProfile(true);
+    setError('');
+    
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const parsed = profileUpdateSchema.safeParse(profileForm);
-      if (!parsed.success) {
-        alert(parsed.error.errors[0]?.message || 'Invalid input');
+      if (!session) {
+        setError('Not authenticated');
         return;
       }
 
+      // Validate form data
+      const parsed = profileUpdateSchema.safeParse(profileForm);
+      if (!parsed.success) {
+        const firstError = parsed.error.errors[0];
+        setError(firstError?.message || 'Invalid input');
+        return;
+      }
+
+      const { fullName, phone } = parsed.data;
+
+      // Update users table
       const { data: updateData, error: updateError } = await supabase
         .from('users')
         .update({
-          full_name: profileForm.fullName,
-          phone: profileForm.phone
+          full_name: fullName,
+          phone: phone
         })
-        .eq('email', session.user.email)
+        .eq('id', session.user.id)
         .select()
         .single();
 
       if (updateError) {
-        console.error('Error updating profile:', updateError);
-        alert('Failed to update profile');
+        console.error('Error updating user profile:', updateError);
+        setError('Failed to update profile: ' + updateError.message);
         return;
       }
 
+      // Update user_profiles table using backend API
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+        
+        const profileResponse = await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            // Only update fields that exist in user_profiles
+            admission_number: studentProfile?.admission_number || '',
+            course: studentProfile?.course || '',
+            batch_year: studentProfile?.batch_year || null,
+            date_of_birth: studentProfile?.date_of_birth || null,
+            gender: studentProfile?.gender || null,
+            address: studentProfile?.address || null,
+            city: studentProfile?.city || null,
+            state: studentProfile?.state || null,
+            country: studentProfile?.country || null,
+            emergency_contact_name: studentProfile?.emergency_contact_name || null,
+            emergency_contact_phone: studentProfile?.emergency_contact_phone || null,
+            parent_name: studentProfile?.parent_name || null,
+            parent_phone: studentProfile?.parent_phone || null,
+            parent_email: studentProfile?.parent_email || null,
+            aadhar_number: studentProfile?.aadhar_number || null,
+            blood_group: studentProfile?.blood_group || null,
+            room_id: studentProfile?.room_id || null,
+            avatar_url: studentProfile?.avatar_url || null,
+            status: studentProfile?.status || 'active',
+            profile_status: studentProfile?.profile_status || 'incomplete'
+          })
+        });
+
+        if (!profileResponse.ok) {
+          const errorResult = await profileResponse.json();
+          console.warn('User profile updated but detailed profile update failed:', errorResult);
+        }
+      } catch (profileError) {
+        console.warn('User profile updated but detailed profile update failed:', profileError);
+      }
+
+      // Update local state
       setUser(prev => ({ 
         ...prev, 
         full_name: updateData.full_name, 
         phone: updateData.phone 
       }));
-      alert('Profile updated');
+
+      // Show success message
+      setError('');
+      alert('Profile updated successfully!');
+      
+      // Refresh profile data
+      await fetchStudentProfile();
+      
     } catch (error) {
       console.error('Error updating profile:', error);
-      alert('Failed to update profile');
+      setError('Failed to update profile: ' + error.message);
     } finally {
       setIsSavingProfile(false);
     }
@@ -1452,93 +1509,176 @@ const StudentDashboard = () => {
   };
 
   const renderProfile = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-4">Account Settings</h2>
-        <div className="flex items-center space-x-6 mb-6">
-          <div className="relative group">
-            <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-1 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <div className="w-full h-full rounded-full overflow-hidden bg-white p-1">
-                {user?.user_profiles?.avatar_url ? (
-                  <img 
-                    src={user.user_profiles.avatar_url} 
-                    alt="Profile" 
-                    className="w-full h-full object-cover rounded-full transition-all duration-300 group-hover:scale-110 group-hover:brightness-110" 
-                  />
-                ) : (
-                  <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center group-hover:from-amber-600 group-hover:to-orange-700 transition-all duration-300">
-                    <User className="w-10 h-10 text-white" />
-                  </div>
-                )}
+    <div className="space-y-8">
+      {/* Profile Header Card */}
+      <div className="bg-gradient-to-br from-white via-amber-50/30 to-orange-50/20 rounded-3xl shadow-2xl border border-amber-200/50 p-8">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center space-x-6">
+            <div className="relative group">
+              <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-2 shadow-2xl hover:shadow-3xl transition-all duration-300">
+                <div className="w-full h-full rounded-full overflow-hidden bg-white p-1">
+                  {user?.user_profiles?.avatar_url ? (
+                    <img 
+                      src={user.user_profiles.avatar_url} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-400">
+                      <User className="w-10 h-10" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            {/* Edit overlay on hover */}
-            <div className="absolute inset-0 rounded-full bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center">
-              <div className="text-white text-xs font-medium bg-black bg-opacity-30 px-2 py-1 rounded-full">Edit</div>
-            </div>
-            {/* Hover effect ring */}
-            <div className="absolute inset-0 rounded-full border-2 border-transparent group-hover:border-amber-300 transition-all duration-300"></div>
-          </div>
-          <div className="flex-1">
-            <div className="text-slate-800 font-bold text-lg">{user.fullName}</div>
-            <div className="text-slate-600 text-sm font-medium">{user.email}</div>
-            <div className="flex items-center space-x-2 mt-1">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-xs text-slate-500">Online</span>
+            <div>
+              <h3 className="text-2xl font-bold text-slate-800 mb-2">{user?.full_name || 'User'}</h3>
+              <p className="text-slate-600 text-lg mb-2">{user?.email}</p>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-slate-500 font-medium">Online</span>
+              </div>
             </div>
           </div>
+          <button
+            onClick={handleEditProfile}
+            className="px-6 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl hover:from-amber-700 hover:to-orange-700 transition-all font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+          >
+            Edit Profile
+          </button>
         </div>
-        <form onSubmit={handleSaveProfile} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Full Name</label>
-            <input
-              type="text"
-              value={profileForm.fullName}
-              onChange={(e) => setProfileForm({ ...profileForm, fullName: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-              required
-            />
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              <span className="font-medium">Error:</span>
+              <span>{error}</span>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Phone</label>
-            <input
-              type="tel"
-              value={profileForm.phone}
-              onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
+        )}
+
+        {/* Basic Info Form */}
+        <form onSubmit={handleSaveProfile} className="space-y-6">
+          <h4 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <User className="w-6 h-6 text-amber-600" />
+            Basic Information
+          </h4>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Full Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={profileForm.fullName}
+                onChange={(e) => setProfileForm(prev => ({ ...prev, fullName: e.target.value }))}
+                className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Phone Number <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                value={profileForm.phone}
+                onChange={(e) => {
+                  const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setProfileForm(prev => ({ ...prev, phone: sanitized }));
+                }}
+                className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                placeholder="9876543210"
+                maxLength={10}
+                required
+              />
+              {profileForm.phone && profileForm.phone.length !== 10 && (
+                <p className="text-sm text-amber-600">Phone number must be 10 digits</p>
+              )}
+            </div>
+            
+            <div className="md:col-span-2 space-y-2">
+              <label className="block text-sm font-semibold text-slate-700">Email Address</label>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={user?.email}
+                  disabled
+                  className="w-full px-4 py-3 border-2 border-slate-200 bg-slate-50 rounded-xl text-slate-600 cursor-not-allowed"
+                />
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <CheckCircle className="w-5 h-5 text-green-500" />
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">Email cannot be changed</p>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Email</label>
-            <input
-              type="email"
-              value={user.email}
-              disabled
-              className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg"
-            />
-          </div>
-          <div className="flex items-end">
+          
+          <div className="flex justify-end pt-4">
             <button
               type="submit"
-              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
-              disabled={isSavingProfile}
+              className={`px-8 py-3 rounded-xl transition-all font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 ${
+                isSavingProfile || !profileForm.fullName || !profileForm.phone || profileForm.phone.length !== 10
+                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-700 hover:to-orange-700'
+              }`}
+              disabled={isSavingProfile || !profileForm.fullName || !profileForm.phone || profileForm.phone.length !== 10}
             >
-              {isSavingProfile ? 'Saving...' : 'Save Changes'}
+              {isSavingProfile ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Saving...
+                </div>
+              ) : (
+                'Save Changes'
+              )}
             </button>
           </div>
         </form>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-4">Assignment</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Hostel</label>
-            <p className="text-slate-800">{user.hostel?.name || 'Not Assigned'}</p>
+      {/* Assignment Information */}
+      <div className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 rounded-3xl shadow-2xl border border-blue-200/50 p-8">
+        <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
+            <Building2 className="w-6 h-6 text-white" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1">Room</label>
-            <p className="text-slate-800">{user.room?.room_number || roomDetails?.roomNumber || 'Not Assigned'}</p>
+          Assignment Information
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-blue-100">
+            <h4 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-600" />
+              Hostel
+            </h4>
+            <p className="text-2xl font-bold text-slate-800">
+              {user?.hostel?.name || roomDetails?.hostel?.name || 'Not Assigned'}
+            </p>
+            {roomDetails?.hostel?.address && (
+              <p className="text-slate-600 mt-2">{roomDetails.hostel.address}</p>
+            )}
+          </div>
+          
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-blue-100">
+            <h4 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">
+              <Home className="w-5 h-5 text-green-600" />
+              Room
+            </h4>
+            <p className="text-2xl font-bold text-slate-800">
+              {user?.room?.room_number || roomDetails?.roomNumber || 'Not Assigned'}
+            </p>
+            {roomDetails && (
+              <div className="mt-2 space-y-1">
+                <p className="text-slate-600">Floor: {roomDetails.floor}</p>
+                <p className="text-slate-600">Type: {roomDetails.roomType}</p>
+                <p className="text-slate-600">Capacity: {roomDetails.occupied}/{roomDetails.capacity}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2381,9 +2521,9 @@ default:
             <div className="relative group">
               <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-0.5 shadow-lg hover:shadow-xl transition-all duration-300">
                 <div className="w-full h-full rounded-full overflow-hidden bg-white p-0.5">
-                  {user?.user_profiles?.avatar_url ? (
+                  {(user?.avatarUrl || user?.user_profiles?.avatar_url) ? (
                     <img 
-                      src={user.user_profiles.avatar_url} 
+                      src={user.avatarUrl || user.user_profiles.avatar_url}
                       alt="Profile" 
                       className="w-full h-full object-cover rounded-full transition-all duration-300 group-hover:scale-105 group-hover:brightness-110" 
                     />

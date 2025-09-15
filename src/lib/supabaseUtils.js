@@ -779,25 +779,62 @@ export const profileUtils = {
     return { data, error }
   },
 
-  // Create user profile
+  // Create user profile using backend API
   async createUserProfile(profileData) {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .insert(profileData)
-      .select()
-      .single()
-    return { data, error }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      
+      const response = await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(profileData)
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to create profile');
+      }
+
+      return { data: result.data, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
   },
 
-  // Update user profile
+  // Update user profile using backend API
   async updateUserProfile(userId, updates) {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .update(updates)
-      .eq('user_id', userId)
-      .select()
-      .single()
-    return { data, error }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      
+      const response = await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ ...updates, user_id: userId })
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to update profile');
+      }
+
+      return { data: result.data, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
   },
 
   // Check if user has profile

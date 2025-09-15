@@ -241,7 +241,18 @@ const SignUp = () => {
                   <input
                     type="tel"
                     id="phone"
-                    {...register('phone')}
+                    {...register('phone', {
+                      onChange: (e) => {
+                        const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        if (sanitized !== e.target.value) {
+                          e.target.value = sanitized;
+                        }
+                      }
+                    })}
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    maxLength={10}
+                    pattern="[0-9]{10}"
                     className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${
                       errors.phone ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300'
                     }`}
