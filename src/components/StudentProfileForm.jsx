@@ -28,13 +28,14 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
     handleSubmit,
     formState: { errors, isValid, isDirty },
     watch,
+    getValues,
     setValue,
     trigger,
     reset
   } = useForm({
     resolver: zodResolver(studentProfileSchema),
-    mode: 'onSubmit', // Only validate on form submission
-    reValidateMode: 'onSubmit', // Only re-validate on form submission
+    mode: 'onChange', // Live validation while typing
+    reValidateMode: 'onChange', // Re-validate on each change
     defaultValues: {
       full_name: '',
       phone: '',
@@ -57,8 +58,8 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
     }
   });
 
-  // Watch form values for live validation
-  const watchedValues = watch();
+  // Avoid subscribing to all fields to prevent excessive re-renders and focus issues
+  // const watchedValues = watch();
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -130,6 +131,17 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
         if (!avatarUrl && metaUrl) {
           setAvatarUrl(metaUrl);
         }
+        // Try loading from user_profiles as the source of truth
+        if (session?.user?.id) {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('avatar_url')
+            .eq('user_id', session.user.id)
+            .single();
+          if (profile?.avatar_url) {
+            setAvatarUrl(profile.avatar_url);
+          }
+        }
       } catch {}
     };
     loadAvatar();
@@ -167,7 +179,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
     setVerificationMessage('');
     
     try {
-      const fullName = watchedValues.full_name;
+      const fullName = getValues('full_name');
       if (!fullName) {
         setVerificationMessage('Please enter your full name first');
         return;
@@ -355,17 +367,38 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
       if (!session) throw new Error('Not authenticated');
 
       const fileExt = file.name.split('.').pop();
-      const fileName = `${session.user.id}-${Date.now()}.${fileExt}`;
-      const filePath = fileName;
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `${session.user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
+        .from('profile_picture')
         .upload(filePath, file, { cacheControl: '3600', upsert: true });
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const { data } = supabase.storage.from('profile_picture').getPublicUrl(filePath);
       setAvatarUrl(data.publicUrl);
+
+      // Persist avatar immediately to backend and auth metadata
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+        await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ avatar_url: data.publicUrl, status: 'complete', profile_status: 'active' })
+        });
+      } catch (e) {
+        console.warn('Failed to persist avatar to backend immediately:', e);
+      }
+
+      try {
+        await supabase.auth.updateUser({ data: { avatar_url: data.publicUrl } });
+      } catch (e) {
+        console.warn('Failed to update auth metadata avatar_url:', e);
+      }
     } catch (err) {
       console.error('Avatar upload failed:', err);
     } finally {
@@ -375,7 +408,8 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
 
   const getFieldStatus = (fieldName) => {
     const hasError = errors[fieldName];
-    const hasValue = watchedValues[fieldName] && watchedValues[fieldName].toString().trim() !== '';
+    const currentValue = getValues(fieldName);
+    const hasValue = currentValue !== undefined && currentValue !== null && currentValue.toString().trim() !== '';
 
     // Only show error status if there's an actual error (not while typing)
     if (hasError) return 'error';
@@ -555,43 +589,18 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 required
               />
               
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
-                  Phone Number
-                  <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-              <input
-                    {...register('phone')}
+              <InputField
+                name="phone"
+                label="Phone Number"
                 type="tel"
-                    placeholder="9876543210"
-                    maxLength={10}
-                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 ${
-                      getFieldStatus('phone') === 'error' 
-                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
-                        : getFieldStatus('phone') === 'success'
-                        ? 'border-green-300 focus:border-green-500 focus:ring-green-500 bg-green-50'
-                        : 'border-slate-300 focus:border-amber-500 focus:ring-amber-500 bg-white hover:border-amber-400'
-                    }`}
-                    onChange={(e) => {
-                      const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setValue('phone', sanitized, { shouldValidate: false, shouldDirty: true });
-                    }}
-                  />
-                  {getFieldIcon('phone') && (
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      {getFieldIcon('phone')}
-                    </div>
-                  )}
-                </div>
-                {errors.phone && getFieldStatus('phone') === 'error' && (
-                  <div className="flex items-center gap-2 text-red-600 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    {errors.phone.message}
-                  </div>
-                )}
-              </div>
+                placeholder="9876543210"
+                icon={Phone}
+                required
+                onChange={(e) => {
+                  const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setValue('phone', sanitized, { shouldValidate: true, shouldDirty: true });
+                }}
+              />
               
               <div className="md:col-span-2">
                 <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2 mb-2">
@@ -646,43 +655,18 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
               required
             />
             
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                Batch Year
-                <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-            <input
-                  {...register('batch_year')}
+            <InputField
+              name="batch_year"
+              label="Batch Year"
               type="text"
-                  placeholder="2025"
-                  maxLength={4}
-                  className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 ${
-                    getFieldStatus('batch_year') === 'error' 
-                      ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
-                      : getFieldStatus('batch_year') === 'success'
-                      ? 'border-green-300 focus:border-green-500 focus:ring-green-500 bg-green-50'
-                      : 'border-slate-300 focus:border-amber-500 focus:ring-amber-500 bg-white hover:border-amber-400'
-                  }`}
-                  onChange={(e) => {
-                    const sanitized = e.target.value.replace(/\D/g, '').slice(0, 4);
-                    setValue('batch_year', sanitized, { shouldValidate: false, shouldDirty: true });
-                  }}
-                />
-                {getFieldIcon('batch_year') && (
-                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                    {getFieldIcon('batch_year')}
-                  </div>
-                )}
-              </div>
-              {errors.batch_year && getFieldStatus('batch_year') === 'error' && (
-                <div className="flex items-center gap-2 text-red-600 text-sm">
-                  <AlertCircle className="w-4 h-4" />
-                  {errors.batch_year.message}
-                </div>
-              )}
-            </div>
+              placeholder="2025"
+              icon={Calendar}
+              required
+              onChange={(e) => {
+                const sanitized = e.target.value.replace(/\D/g, '').slice(0, 4);
+                setValue('batch_year', sanitized, { shouldValidate: true, shouldDirty: true });
+              }}
+            />
           </div>
         </div>
 
@@ -917,7 +901,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                     }`}
                     onChange={(e) => {
                       const sanitized = e.target.value.replace(/\D/g, '').slice(0, 6);
-                      setValue('pincode', sanitized, { shouldValidate: false, shouldDirty: true });
+                      setValue('pincode', sanitized, { shouldValidate: true, shouldDirty: true });
                       if (sanitized.length === 6) {
                         fetchLocationFromPincode(sanitized);
                       }
@@ -948,21 +932,29 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                   <MapPin className="w-4 h-4" />
                   Country
                 </label>
-                <input
-                  {...register('country')}
-                  type="text"
-                  placeholder="Enter country"
-                  className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 ${
-                    getFieldStatus('country') === 'error' 
-                      ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
-                      : getFieldStatus('country') === 'success'
-                      ? 'border-green-300 focus:border-green-500 focus:ring-green-500 bg-green-50'
-                      : 'border-slate-300 focus:border-amber-500 focus:ring-amber-500 bg-white hover:border-amber-400'
-                  }`}
-                />
-                {getFieldIcon('country') && (
-                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                    {getFieldIcon('country')}
+                <div className="relative">
+                  <input
+                    {...register('country')}
+                    type="text"
+                    placeholder="Enter country"
+                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 ${
+                      getFieldStatus('country') === 'error' 
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
+                        : getFieldStatus('country') === 'success'
+                        ? 'border-green-300 focus:border-green-500 focus:ring-green-500 bg-green-50'
+                        : 'border-slate-300 focus:border-amber-500 focus:ring-amber-500 bg-white hover:border-amber-400'
+                    }`}
+                  />
+                  {getFieldIcon('country') && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      {getFieldIcon('country')}
+                    </div>
+                  )}
+                </div>
+                {errors.country && getFieldStatus('country') === 'error' && (
+                  <div className="flex items-center gap-2 text-red-600 text-sm">
+                    <AlertCircle className="w-4 h-4" />
+                    {errors.country.message}
                   </div>
                 )}
               </div>
@@ -1014,42 +1006,17 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 icon={User}
               />
               
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
-                  Contact Phone
-                </label>
-                <div className="relative">
-              <input
-                    {...register('emergency_contact_phone')}
+              <InputField
+                name="emergency_contact_phone"
+                label="Contact Phone"
                 type="tel"
-                    placeholder="9876543210"
-                    maxLength={10}
-                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 ${
-                      getFieldStatus('emergency_contact_phone') === 'error' 
-                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
-                        : getFieldStatus('emergency_contact_phone') === 'success'
-                        ? 'border-green-300 focus:border-green-500 focus:ring-green-500 bg-green-50'
-                        : 'border-slate-300 focus:border-amber-500 focus:ring-amber-500 bg-white hover:border-amber-400'
-                    }`}
-                    onChange={(e) => {
-                      const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setValue('emergency_contact_phone', sanitized, { shouldValidate: false, shouldDirty: true });
-                    }}
-                  />
-                  {getFieldIcon('emergency_contact_phone') && (
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      {getFieldIcon('emergency_contact_phone')}
-                    </div>
-                  )}
-                </div>
-                {errors.emergency_contact_phone && getFieldStatus('emergency_contact_phone') === 'error' && (
-                  <div className="flex items-center gap-2 text-red-600 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    {errors.emergency_contact_phone.message}
-                  </div>
-                )}
-              </div>
+                placeholder="9876543210"
+                icon={Phone}
+                onChange={(e) => {
+                  const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setValue('emergency_contact_phone', sanitized, { shouldValidate: true, shouldDirty: true });
+                }}
+              />
             </div>
             
             <div className="space-y-6">
@@ -1065,42 +1032,17 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 icon={User}
               />
               
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
-                  Parent Phone
-                </label>
-                <div className="relative">
-              <input
-                    {...register('parent_phone')}
+              <InputField
+                name="parent_phone"
+                label="Parent Phone"
                 type="tel"
-                    placeholder="9876543210"
-                    maxLength={10}
-                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 ${
-                      getFieldStatus('parent_phone') === 'error' 
-                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
-                        : getFieldStatus('parent_phone') === 'success'
-                        ? 'border-green-300 focus:border-green-500 focus:ring-green-500 bg-green-50'
-                        : 'border-slate-300 focus:border-amber-500 focus:ring-amber-500 bg-white hover:border-amber-400'
-                    }`}
-                    onChange={(e) => {
-                      const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
-                      setValue('parent_phone', sanitized, { shouldValidate: false, shouldDirty: true });
-                    }}
-                  />
-                  {getFieldIcon('parent_phone') && (
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      {getFieldIcon('parent_phone')}
-                    </div>
-                  )}
-                </div>
-                {errors.parent_phone && getFieldStatus('parent_phone') === 'error' && (
-                  <div className="flex items-center gap-2 text-red-600 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    {errors.parent_phone.message}
-                  </div>
-                )}
-              </div>
+                placeholder="9876543210"
+                icon={Phone}
+                onChange={(e) => {
+                  const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setValue('parent_phone', sanitized, { shouldValidate: true, shouldDirty: true });
+                }}
+              />
               
               <InputField
                 name="parent_email"

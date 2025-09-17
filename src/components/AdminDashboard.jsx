@@ -207,10 +207,14 @@ const AdminDashboard = () => {
       });
 
       if (response.ok) {
+        const result = await response.json();
         setShowHostelModal(false);
         fetchHostels(); // Refresh hostels list
         fetchDashboardStats(); // Refresh stats
         alert('Hostel created successfully!');
+        
+        // After creating hostel, create some default rooms
+        await createDefaultRooms(formData.capacity);
       } else {
         const error = await response.json();
         alert(error.message || 'Failed to create hostel');
@@ -220,6 +224,46 @@ const AdminDashboard = () => {
       alert('Failed to create hostel');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const createDefaultRooms = async (capacity) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // Create rooms based on capacity (assuming 2 students per room)
+      const numberOfRooms = Math.ceil(capacity / 2);
+      const rooms = [];
+      
+      for (let i = 1; i <= numberOfRooms; i++) {
+        rooms.push({
+          room_number: `R${i.toString().padStart(3, '0')}`,
+          floor: Math.ceil(i / 10), // 10 rooms per floor
+          room_type: 'standard',
+          capacity: 2,
+          price: 5000,
+          amenities: ['WiFi', 'AC', 'Furniture']
+        });
+      }
+
+      // Create rooms in batches
+      for (const room of rooms) {
+        const response = await fetch('http://localhost:3002/api/room-allocation/rooms', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(room)
+        });
+
+        if (!response.ok) {
+          console.error('Failed to create room:', room.room_number);
+        }
+      }
+    } catch (error) {
+      console.error('Error creating default rooms:', error);
     }
   };
 
@@ -500,7 +544,6 @@ const AdminDashboard = () => {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Room</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Hostel</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
@@ -520,7 +563,6 @@ const AdminDashboard = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{student.roomNumber}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{student.hostelName}</td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       student.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 

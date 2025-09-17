@@ -1266,56 +1266,68 @@ const AdminDashboard = () => {
       // Recent user profile updates
       const { data: profileUpdates } = await supabase
         .from('user_profiles')
-        .select('user_id, updated_at, users(full_name)')
+        .select('user_id, updated_at')
         .not('updated_at', 'is', null)
         .order('updated_at', { ascending: false })
         .limit(3);
 
       if (profileUpdates) {
-        profileUpdates.forEach(profile => {
+        for (const profile of profileUpdates) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', profile.user_id)
+            .single();
+          
           activities.push({
             id: `profile-${profile.updated_at}`,
             type: 'profile_update',
             title: 'Profile Updated',
-            description: `${profile.users?.full_name} updated their profile`,
+            description: `${user?.full_name || 'User'} updated their profile`,
             timestamp: profile.updated_at,
             icon: '✏️',
             color: 'purple'
           });
-        });
+        }
       }
 
       // Recent complaints
       const { data: recentComplaints } = await supabase
         .from('complaints')
-        .select('title, status, created_at, updated_at, user_id, users(full_name)')
+        .select('title, status, created_at, updated_at, user_id')
         .order('created_at', { ascending: false })
         .limit(5);
 
       if (recentComplaints) {
-        recentComplaints.forEach(complaint => {
+        for (const complaint of recentComplaints) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', complaint.user_id)
+            .single();
+          
           activities.push({
             id: `complaint-${complaint.created_at}`,
             type: 'complaint',
             title: 'New Complaint',
-            description: `${complaint.title} by ${complaint.users?.full_name} - Status: ${complaint.status}`,
+            description: `${complaint.title} by ${user?.full_name || 'User'} - Status: ${complaint.status}`,
             timestamp: complaint.created_at,
             icon: '⚠️',
             color: 'red'
           });
-        });
+        }
       }
 
       // Recent complaint updates
       const { data: complaintUpdates } = await supabase
         .from('complaints')
-        .select('title, status, updated_at, users(full_name)')
+        .select('title, status, updated_at, user_id')
         .not('updated_at', 'is', null)
         .order('updated_at', { ascending: false })
         .limit(3);
 
       if (complaintUpdates) {
-        complaintUpdates.forEach(complaint => {
+        for (const complaint of complaintUpdates) {
           activities.push({
             id: `complaint-update-${complaint.updated_at}`,
             type: 'complaint_update',
@@ -1325,61 +1337,73 @@ const AdminDashboard = () => {
             icon: '🔄',
             color: 'orange'
           });
-        });
+        }
       }
 
       // Recent payments
       const { data: recentPayments } = await supabase
         .from('payments')
-        .select('amount, status, created_at, updated_at, user_id, users(full_name)')
+        .select('amount, status, created_at, updated_at, user_id')
         .order('created_at', { ascending: false })
         .limit(5);
 
       if (recentPayments) {
-        recentPayments.forEach(payment => {
+        for (const payment of recentPayments) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', payment.user_id)
+            .single();
+          
           activities.push({
             id: `payment-${payment.created_at}`,
             type: 'payment',
             title: 'Payment Processed',
-            description: `$${payment.amount} by ${payment.users?.full_name} - Status: ${payment.status}`,
+            description: `$${payment.amount} by ${user?.full_name || 'User'} - Status: ${payment.status}`,
             timestamp: payment.created_at,
             icon: '💳',
             color: 'green'
           });
-        });
+        }
       }
 
       // Recent leave requests
       const { data: recentLeaves } = await supabase
         .from('leave_requests')
-        .select('reason, status, created_at, updated_at, user_id, users(full_name)')
+        .select('reason, status, created_at, updated_at, user_id')
         .order('created_at', { ascending: false })
         .limit(5);
 
       if (recentLeaves) {
-        recentLeaves.forEach(leave => {
+        for (const leave of recentLeaves) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', leave.user_id)
+            .single();
+          
           activities.push({
             id: `leave-${leave.created_at}`,
             type: 'leave_request',
             title: 'Leave Request',
-            description: `${leave.reason} by ${leave.users?.full_name} - Status: ${leave.status}`,
+            description: `${leave.reason} by ${user?.full_name || 'User'} - Status: ${leave.status}`,
             timestamp: leave.created_at,
             icon: '📅',
             color: 'yellow'
           });
-        });
+        }
       }
 
       // Recent leave request updates
       const { data: leaveUpdates } = await supabase
         .from('leave_requests')
-        .select('reason, status, updated_at, users(full_name)')
+        .select('reason, status, updated_at, user_id')
         .not('updated_at', 'is', null)
         .order('updated_at', { ascending: false })
         .limit(3);
 
       if (leaveUpdates) {
-        leaveUpdates.forEach(leave => {
+        for (const leave of leaveUpdates) {
           activities.push({
             id: `leave-update-${leave.updated_at}`,
             type: 'leave_update',
@@ -1389,70 +1413,94 @@ const AdminDashboard = () => {
             icon: '📝',
             color: 'indigo'
           });
-        });
+        }
       }
 
       // Recent room allocations
       const { data: roomAllocations } = await supabase
         .from('room_allocations')
-        .select('created_at, users(full_name), rooms(room_number)')
+        .select('created_at, user_id, room_id')
         .order('created_at', { ascending: false })
         .limit(3);
 
       if (roomAllocations) {
-        roomAllocations.forEach(allocation => {
+        for (const allocation of roomAllocations) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', allocation.user_id)
+            .single();
+          
+          const { data: room } = await supabase
+            .from('rooms')
+            .select('room_number')
+            .eq('id', allocation.room_id)
+            .single();
+          
           activities.push({
             id: `allocation-${allocation.created_at}`,
             type: 'room_allocation',
             title: 'Room Allocated',
-            description: `${allocation.users?.full_name} assigned to Room ${allocation.rooms?.room_number}`,
+            description: `${user?.full_name || 'User'} assigned to Room ${room?.room_number || 'Unknown'}`,
             timestamp: allocation.created_at,
             icon: '🏠',
             color: 'teal'
           });
-        });
+        }
       }
 
       // Recent room requests
       const { data: roomRequests } = await supabase
         .from('room_requests')
-        .select('created_at, status, users(full_name)')
+        .select('created_at, status, user_id')
         .order('created_at', { ascending: false })
         .limit(3);
 
       if (roomRequests) {
-        roomRequests.forEach(request => {
+        for (const request of roomRequests) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', request.user_id)
+            .single();
+          
           activities.push({
             id: `room-request-${request.created_at}`,
             type: 'room_request',
             title: 'Room Request',
-            description: `${request.users?.full_name} requested a room - Status: ${request.status}`,
+            description: `${user?.full_name || 'User'} requested a room - Status: ${request.status}`,
             timestamp: request.created_at,
             icon: '🔑',
             color: 'cyan'
           });
-        });
+        }
       }
 
       // Recent notifications
       const { data: notifications } = await supabase
         .from('notifications')
-        .select('title, message, created_at, user_id, users(full_name)')
+        .select('title, message, created_at, user_id')
         .order('created_at', { ascending: false })
         .limit(3);
 
       if (notifications) {
-        notifications.forEach(notification => {
+        for (const notification of notifications) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', notification.user_id)
+            .single();
+          
           activities.push({
             id: `notification-${notification.created_at}`,
             type: 'notification',
             title: 'Notification Sent',
-            description: `${notification.title} to ${notification.users?.full_name}`,
+            description: `${notification.title} to ${user?.full_name || 'User'}`,
             timestamp: notification.created_at,
             icon: '🔔',
             color: 'pink'
           });
-        });
+        }
       }
 
       // Recent hostel updates
@@ -1464,7 +1512,7 @@ const AdminDashboard = () => {
         .limit(1);
 
       if (hostelUpdates) {
-        hostelUpdates.forEach(hostel => {
+        for (const hostel of hostelUpdates) {
           activities.push({
             id: `hostel-update-${hostel.updated_at}`,
             type: 'hostel_update',
@@ -1474,7 +1522,7 @@ const AdminDashboard = () => {
             icon: '🏢',
             color: 'amber'
           });
-        });
+        }
       }
 
       // Recent room updates
@@ -1486,7 +1534,7 @@ const AdminDashboard = () => {
         .limit(3);
 
       if (roomUpdates) {
-        roomUpdates.forEach(room => {
+        for (const room of roomUpdates) {
           activities.push({
             id: `room-update-${room.updated_at}`,
             type: 'room_update',
@@ -1496,7 +1544,7 @@ const AdminDashboard = () => {
             icon: '🚪',
             color: 'lime'
           });
-        });
+        }
       }
 
       // Sort by timestamp and take the most recent 15
@@ -1777,35 +1825,31 @@ const AdminDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Get the first hostel ID (since we only have one hostel)
-      const { data: hostels } = await supabase.from('hostels').select('id').limit(1);
-      if (!hostels || hostels.length === 0) {
-        showNotification('Please add hostel information first', 'error');
-        return;
-      }
-
-      // Create room in the database
-      const { data: room, error } = await supabase
-        .from('rooms')
-        .insert({
-          hostel_id: hostels[0].id,
+      // Create room using the API endpoint
+      const response = await fetch('http://localhost:3002/api/room-allocation/rooms', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           room_number: formData.room_number,
           floor: parseInt(formData.floor),
           room_type: formData.room_type,
           capacity: parseInt(formData.capacity),
-          rent_amount: parseFloat(formData.price),
-          status: 'available'
+          price: parseFloat(formData.price),
+          amenities: formData.amenities || []
         })
-        .select()
-        .single();
+      });
 
-      if (!error) {
+      if (response.ok) {
         setShowRoomModal(false);
         fetchRooms(); // Refresh rooms list
         fetchDashboardStats(); // Refresh stats
         showNotification('Room created successfully!', 'success');
       } else {
-        showNotification('Failed to create room: ' + error.message, 'error');
+        const error = await response.json();
+        showNotification('Failed to create room: ' + (error.message || 'Unknown error'), 'error');
       }
     } catch (error) {
       console.error('Error creating room:', error);
@@ -1969,7 +2013,8 @@ const AdminDashboard = () => {
       setIsLoadingLocation(true);
       showNotification('Fetching your location...', 'info');
       
-      navigator.geolocation.getCurrentPosition(
+      try {
+        navigator.geolocation.getCurrentPosition(
         (position) => {
           const coords = {
             lat: position.coords.latitude,
@@ -2014,8 +2059,13 @@ const AdminDashboard = () => {
           maximumAge: 60000
         }
       );
+      } catch (error) {
+        console.error('Geolocation error:', error);
+        setIsLoadingLocation(false);
+        showNotification('Location access is not available. You can manually enter the address.', 'warning');
+      }
     } else {
-      showNotification('Geolocation is not supported by this browser', 'error');
+      showNotification('Geolocation is not supported by this browser. You can manually enter the address.', 'warning');
     }
   };
 

@@ -333,17 +333,20 @@ export const studentProfileSchema = z.object({
   city: z
     .string()
     .optional()
-    .refine((v) => !v || v.length >= 2, 'City must be at least 2 characters'),
+    .refine((v) => !v || v.length >= 2, 'City must be at least 2 characters')
+    .refine((v) => !v || /^[A-Za-z\s.-]+$/.test(v), 'City can only contain letters, spaces, periods, and hyphens'),
   
   state: z
     .string()
     .optional()
-    .refine((v) => !v || v.length >= 2, 'State must be at least 2 characters'),
+    .refine((v) => !v || v.length >= 2, 'State must be at least 2 characters')
+    .refine((v) => !v || /^[A-Za-z\s.-]+$/.test(v), 'State can only contain letters, spaces, periods, and hyphens'),
   
   country: z
     .string()
     .optional()
-    .refine((v) => !v || v.length >= 2, 'Country must be at least 2 characters'),
+    .refine((v) => !v || v.length >= 2, 'Country must be at least 2 characters')
+    .refine((v) => !v || /^[A-Za-z\s.-]+$/.test(v), 'Country can only contain letters, spaces, periods, and hyphens'),
   
   pincode: z
     .string()
