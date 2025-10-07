@@ -1,18 +1,27 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import Navigation from './components/Navigation';
 import LandingPage from './components/LandingPage';
-import SignUp from './components/SignUp';
+// SignUp component removed - registration disabled
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import StudentDashboard from './components/dashboard/StudentDashboard';
-import AdminDashboard from './components/dashboard/AdminDashboard';
+import ComprehensiveAdminDashboard from './components/dashboard/ComprehensiveAdminDashboard';
+import WardenDashboard from './components/dashboard/WardenDashboard';
 import OperationsDashboard from './components/dashboard/OperationsDashboard';
+import ParentDashboard from './components/dashboard/ParentDashboard';
 import TestDashboard from './components/TestDashboard';
 import AuthCallback from './components/AuthCallback';
 import ForgotPassword from './components/ForgotPassword';
 import ResetPassword from './components/ResetPassword';
+import Activate from './components/Activate';
 import ServicesPage from './components/ServicesPage';
 import AboutPage from './components/AboutPage';
+import StudentRoomRequest from './components/StudentRoomRequest';
+import ParentOTPVerification from './components/ParentOTPVerification';
+import ParcelManagement from './components/ParcelManagement';
+import QRVerification from './components/QRVerification';
+import StudentCleaningRequest from './components/StudentCleaningRequest';
+import CleaningManagement from './components/CleaningManagement';
 import { NotificationProvider } from './contexts/NotificationContext';
 import './App.css';
 
@@ -31,18 +40,27 @@ const AppContent = () => {
       {!isDashboardPage && <Navigation />}
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/signup" element={<SignUp />} />
+        {/* Signup route removed - registration disabled */}
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/activate" element={<Activate />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/student-dashboard" element={<StudentDashboard />} />
-        <Route path="/admin-dashboard" element={<AdminDashboard />} />
+        <Route path="/admin-dashboard" element={<ComprehensiveAdminDashboard />} />
+        <Route path="/warden-dashboard" element={<WardenDashboard />} />
         <Route path="/operations-dashboard" element={<OperationsDashboard />} />
+        <Route path="/parent-dashboard" element={<ParentDashboard />} />
         <Route path="/test" element={<TestDashboard />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/student/room-request" element={<StudentRoomRequest />} />
+        <Route path="/parent/verify" element={<ParentOTPVerification />} />
+        <Route path="/staff/parcel-management" element={<ParcelManagement />} />
+        <Route path="/staff/qr-verification" element={<QRVerification />} />
+        <Route path="/student/cleaning-request" element={<StudentCleaningRequest />} />
+        <Route path="/staff/cleaning-management" element={<CleaningManagement />} />
       </Routes>
     </div>
   );

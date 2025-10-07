@@ -659,6 +659,7 @@ const RoomAllocation = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Priority Score</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Allocated Room</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Info</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -706,6 +707,23 @@ const RoomAllocation = () => {
                       </div>
                     ) : (
                       <span className="text-slate-400">Not allocated</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    {request.allocated_room ? (
+                      <div>
+                        <p className="font-medium text-green-600">₹{request.allocated_room.price}/month</p>
+                        <p className="text-xs text-slate-500">₹{request.allocated_room.price * 12}/year</p>
+                      </div>
+                    ) : request.notes && request.notes.includes('₹') ? (
+                      <div>
+                        <p className="text-xs text-slate-500">Requested payment info:</p>
+                        <p className="text-sm font-medium text-amber-600">
+                          {request.notes.split('₹')[1]?.split(' ')[0]}/month
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">No payment info</span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

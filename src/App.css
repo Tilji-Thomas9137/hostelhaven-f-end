@@ -25,3 +25,68 @@ html {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* ===== Animations & Motion Utilities ===== */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { transform: scale(0.98); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade-in {
+  animation: fade-in 300ms ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 220ms ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 300ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.stagger-up > * {
+  opacity: 0;
+  animation: slide-up 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.stagger-up > *:nth-child(1) { animation-delay: 40ms; }
+.stagger-up > *:nth-child(2) { animation-delay: 80ms; }
+.stagger-up > *:nth-child(3) { animation-delay: 120ms; }
+.stagger-up > *:nth-child(4) { animation-delay: 160ms; }
+.stagger-up > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-up > *:nth-child(6) { animation-delay: 240ms; }
+.stagger-up > *:nth-child(7) { animation-delay: 280ms; }
+.stagger-up > *:nth-child(8) { animation-delay: 320ms; }
+
+.shimmer {
+  background: linear-gradient(90deg, rgba(226,232,240,0.2) 25%, rgba(226,232,240,0.6) 37%, rgba(226,232,240,0.2) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+.transition-base {
+  transition: all 200ms ease;
+}

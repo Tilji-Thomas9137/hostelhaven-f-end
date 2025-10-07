@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import StudentDashboard from './dashboard/StudentDashboard';
-import AdminDashboard from './dashboard/AdminDashboard';
+import ComprehensiveAdminDashboard from './dashboard/ComprehensiveAdminDashboard';
 import WardenDashboard from './dashboard/WardenDashboard';
 import ParentDashboard from './dashboard/ParentDashboard';
 import OperationsDashboard from './dashboard/OperationsDashboard';
@@ -80,8 +80,8 @@ const Dashboard = () => {
   switch (user.role) {
     case 'student':
       return <StudentDashboard />;
-    case 'admin':
-      return <AdminDashboard />;
+      case 'admin':
+        return <ComprehensiveAdminDashboard />;
     case 'warden':
       return <WardenDashboard />;
     case 'parent':

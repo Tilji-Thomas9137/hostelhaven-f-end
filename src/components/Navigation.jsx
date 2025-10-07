@@ -94,17 +94,11 @@ const Navigation = () => {
           <div className="hidden md:flex items-center space-x-4">
             <Link
               to="/login"
-              className="text-slate-700 hover:text-amber-600 transition-colors font-medium relative group"
-            >
-              Login
-              <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-amber-600 transition-all duration-300 group-hover:w-full"></span>
-            </Link>
-            <Link
-              to="/signup"
               className="bg-amber-600 text-white px-6 py-2 rounded-xl hover:bg-amber-700 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-amber-500/25 font-medium"
             >
-              Get Started
+              Login
             </Link>
+            {/* Signup removed - registration disabled */}
           </div>
 
           {/* Mobile menu button */}
@@ -152,18 +146,12 @@ const Navigation = () => {
             <div className="pt-4 space-y-3">
               <Link
                 to="/login"
-                className="block text-slate-700 hover:text-amber-600 transition-colors font-medium py-2 hover:bg-amber-50 rounded-lg px-3"
+                className="block bg-amber-600 text-white px-6 py-2 rounded-xl hover:bg-amber-700 transition-colors font-medium text-center transform hover:scale-105"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Login
               </Link>
-              <Link
-                to="/signup"
-                className="block bg-amber-600 text-white px-6 py-2 rounded-xl hover:bg-amber-700 transition-colors font-medium text-center transform hover:scale-105"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Get Started
-              </Link>
+              {/* Signup removed - registration disabled */}
             </div>
           </div>
         </div>

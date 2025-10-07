@@ -44,9 +44,12 @@ const StudentDashboard = () => {
   const [payments, setPayments] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [roomRequests, setRoomRequests] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [showRoomRequestModal, setShowRoomRequestModal] = useState(false);
   const [showEditComplaintModal, setShowEditComplaintModal] = useState(false);
   const [showEditLeaveModal, setShowEditLeaveModal] = useState(false);
   const [editingComplaint, setEditingComplaint] = useState(null);
@@ -80,6 +83,8 @@ const StudentDashboard = () => {
           fetchPayments();
           fetchComplaints();
           fetchLeaveRequests();
+          fetchAvailableRooms();
+          fetchRoomRequests();
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -90,6 +95,37 @@ const StudentDashboard = () => {
 
     fetchUserData();
   }, [navigate]);
+
+  // Live update: when admin approves and updates users.room_id, refresh room details
+  useEffect(() => {
+    let channel;
+    const subscribeToRoomAssignment = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      channel = supabase
+        .channel(`users-room-${session.user.id}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users',
+          filter: `id=eq.${session.user.id}`
+        }, (payload) => {
+          const oldRoomId = payload?.old?.room_id || null;
+          const newRoomId = payload?.new?.room_id || null;
+          if (oldRoomId !== newRoomId) {
+            fetchRoomDetails();
+          }
+        })
+        .subscribe();
+    };
+
+    subscribeToRoomAssignment();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
 
   const fetchRoomDetails = async () => {
     try {
@@ -216,6 +252,58 @@ const StudentDashboard = () => {
     }
   };
 
+  const fetchAvailableRooms = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('http://localhost:3002/api/rooms/available', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setAvailableRooms(result.data.rooms.map(room => ({
+          id: room.id,
+          roomNumber: room.room_number,
+          floor: room.floor,
+          roomType: room.room_type,
+          capacity: room.capacity,
+          currentOccupancy: room.current_occupancy,
+          rentAmount: room.rent_amount,
+          status: room.status,
+          hostel: room.hostels
+        })));
+      }
+    } catch (error) {
+      console.error('Error fetching available rooms:', error);
+    }
+  };
+
+  const fetchRoomRequests = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('http://localhost:3002/api/rooms/requests', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setRoomRequests(result.data.requests || []);
+      }
+    } catch (error) {
+      console.error('Error fetching room requests:', error);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -248,7 +336,9 @@ const StudentDashboard = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
+    { id: 'profile', label: 'Student Profile', icon: User },
     { id: 'room', label: 'Room Details', icon: Building2 },
+    { id: 'rooms', label: 'Available Rooms', icon: Search },
     { id: 'payments', label: 'Payments', icon: CreditCard },
     { id: 'complaints', label: 'Complaints', icon: AlertCircle },
     { id: 'leave', label: 'Leave Requests', icon: Calendar }
@@ -631,6 +721,73 @@ const StudentDashboard = () => {
     </div>
   );
 
+  const renderAvailableRooms = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-slate-800">Available Rooms</h2>
+        <button 
+          onClick={() => fetchAvailableRooms()}
+          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
+        >
+          <Search className="w-4 h-4" />
+          <span>Refresh</span>
+        </button>
+      </div>
+      
+      {availableRooms.length === 0 ? (
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-8 text-center">
+          <Building2 className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-slate-800 mb-2">No Available Rooms</h3>
+          <p className="text-slate-600">There are currently no available rooms in your hostel.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {availableRooms.map((room) => (
+            <div key={room.id} className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-800">Room {room.roomNumber}</h3>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  room.status === 'available' ? 'bg-green-100 text-green-800' :
+                  room.status === 'partially_filled' ? 'bg-yellow-100 text-yellow-800' :
+                  'bg-red-100 text-red-800'
+                }`}>
+                  {room.status.replace('_', ' ')}
+                </span>
+              </div>
+              
+              <div className="space-y-2 mb-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Floor:</span>
+                  <span className="font-medium">{room.floor}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Type:</span>
+                  <span className="font-medium capitalize">{room.roomType}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Capacity:</span>
+                  <span className="font-medium">{room.currentOccupancy}/{room.capacity}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Rent:</span>
+                  <span className="font-medium">${room.rentAmount}/month</span>
+                </div>
+              </div>
+              
+              <button 
+                onClick={() => setShowRoomRequestModal(true)}
+                className="w-full bg-amber-600 text-white py-2 px-4 rounded-lg hover:bg-amber-700 transition-colors"
+                disabled={room.currentOccupancy >= room.capacity}
+              >
+                {room.currentOccupancy >= room.capacity ? 'Room Full' : 'Request Room'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const renderLeaveRequests = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -788,6 +945,41 @@ const StudentDashboard = () => {
     } catch (error) {
       console.error('Error updating complaint:', error);
       alert('Failed to update complaint');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRoomRequest = async (roomId, notes) => {
+    setIsSubmitting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('http://localhost:3002/api/rooms/request', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          room_id: roomId,
+          notes: notes
+        })
+      });
+
+      if (response.ok) {
+        setShowRoomRequestModal(false);
+        fetchAvailableRooms();
+        fetchRoomRequests();
+        alert('Room request submitted successfully!');
+      } else {
+        const error = await response.json();
+        alert(error.message || 'Failed to submit room request');
+      }
+    } catch (error) {
+      console.error('Error creating room request:', error);
+      alert('Failed to submit room request');
     } finally {
       setIsSubmitting(false);
     }
@@ -1098,12 +1290,189 @@ const StudentDashboard = () => {
     );
   };
 
+  const renderStudentProfile = () => {
+    if (!user.profile) {
+      return (
+        <div className="p-8 text-center">
+          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <User className="w-8 h-8 text-slate-400" />
+          </div>
+          <h3 className="text-lg font-medium text-slate-800 mb-2">Profile Not Found</h3>
+          <p className="text-slate-600">Your student profile has not been created yet. Please contact the hostel administration.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Profile Header */}
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center space-x-4">
+            <div className="w-16 h-16 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full flex items-center justify-center">
+              <User className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800">{user.fullName}</h2>
+              <p className="text-slate-600">Student ID: {user.profile.admissionNumber}</p>
+              <p className="text-slate-600">{user.profile.course} {user.profile.batchYear && `- Batch ${user.profile.batchYear}`}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Profile Details */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Personal Information */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+              <User className="w-5 h-5" />
+              <span>Personal Information</span>
+            </h3>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Full Name:</span>
+                <span className="font-medium">{user.fullName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Email:</span>
+                <span className="font-medium">{user.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Phone:</span>
+                <span className="font-medium">{user.phone || 'Not provided'}</span>
+              </div>
+              {user.profile.dateOfBirth && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Date of Birth:</span>
+                  <span className="font-medium">{new Date(user.profile.dateOfBirth).toLocaleDateString()}</span>
+                </div>
+              )}
+              {user.profile.bloodGroup && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Blood Group:</span>
+                  <span className="font-medium">{user.profile.bloodGroup}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Academic Information */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+              <GraduationCap className="w-5 h-5" />
+              <span>Academic Information</span>
+            </h3>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Admission Number:</span>
+                <span className="font-medium">{user.profile.admissionNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Course:</span>
+                <span className="font-medium">{user.profile.course}</span>
+              </div>
+              {user.profile.batchYear && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Batch Year:</span>
+                  <span className="font-medium">{user.profile.batchYear}</span>
+                </div>
+              )}
+              {user.profile.joinDate && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Join Date:</span>
+                  <span className="font-medium">{new Date(user.profile.joinDate).toLocaleDateString()}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Contact Information */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+              <MapPin className="w-5 h-5" />
+              <span>Address</span>
+            </h3>
+            <div className="space-y-3">
+              {user.profile.address && (
+                <div>
+                  <span className="text-slate-600">Address:</span>
+                  <p className="font-medium">{user.profile.address}</p>
+                </div>
+              )}
+              {user.profile.city && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">City:</span>
+                  <span className="font-medium">{user.profile.city}</span>
+                </div>
+              )}
+              {user.profile.state && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">State:</span>
+                  <span className="font-medium">{user.profile.state}</span>
+                </div>
+              )}
+              {user.profile.country && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Country:</span>
+                  <span className="font-medium">{user.profile.country}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Emergency Contact */}
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+              <Phone className="w-5 h-5" />
+              <span>Emergency Contact</span>
+            </h3>
+            <div className="space-y-3">
+              {user.profile.parentName && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Parent Name:</span>
+                  <span className="font-medium">{user.profile.parentName}</span>
+                </div>
+              )}
+              {user.profile.parentPhone && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Parent Phone:</span>
+                  <span className="font-medium">{user.profile.parentPhone}</span>
+                </div>
+              )}
+              {user.profile.parentEmail && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Parent Email:</span>
+                  <span className="font-medium">{user.profile.parentEmail}</span>
+                </div>
+              )}
+              {user.profile.emergencyContactName && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Emergency Contact:</span>
+                  <span className="font-medium">{user.profile.emergencyContactName}</span>
+                </div>
+              )}
+              {user.profile.emergencyContactPhone && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Emergency Phone:</span>
+                  <span className="font-medium">{user.profile.emergencyContactPhone}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
         return renderOverview();
+      case 'profile':
+        return renderStudentProfile();
       case 'room':
         return renderRoomDetails();
+      case 'rooms':
+        return renderAvailableRooms();
       case 'payments':
         return renderPayments();
       case 'complaints':
@@ -1140,8 +1509,13 @@ const StudentDashboard = () => {
             </div>
             <div>
               <p className="font-medium text-slate-900">{user.fullName}</p>
-              <p className="text-sm text-slate-500">Student</p>
+              <p className="text-sm text-slate-500">
+                {user.profile?.admissionNumber ? `Student - ${user.profile.admissionNumber}` : 'Student'}
+              </p>
               <p className="text-xs text-slate-400">{user.email}</p>
+              {user.profile?.course && (
+                <p className="text-xs text-slate-500">{user.profile.course} {user.profile.batchYear && `(${user.profile.batchYear})`}</p>
+              )}
             </div>
           </div>
         </div>

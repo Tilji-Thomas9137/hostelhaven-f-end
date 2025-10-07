@@ -7,7 +7,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { profileUtils } from '../../lib/supabaseUtils';
 import StudentProfileForm from '../StudentProfileForm';
+import StudentProfileView from '../StudentProfileView';
 import StudentRoomRequest from './StudentRoomRequest';
+import StudentCleaningRequest from '../StudentCleaningRequest';
 import { 
   Building2, 
   Users, 
@@ -45,12 +47,22 @@ const StudentDashboard = () => {
     room: true,
     payments: true,
     complaints: true,
-    leave: true
+    leave: true,
+    notifications: true
   });
   const [roomDetails, setRoomDetails] = useState(null);
   const [payments, setPayments] = useState([]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({
+    payment_method: 'online',
+    transaction_reference: ''
+  });
+  const [showPaymentDuePopup, setShowPaymentDuePopup] = useState(false);
+  const [dueNotification, setDueNotification] = useState(null);
   const [complaints, setComplaints] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -102,13 +114,10 @@ const StudentDashboard = () => {
           }
         }
 
-        // Fetch user profile from Supabase with avatar_url from user_profiles
+        // Fetch user profile from Supabase
         const { data: userProfile, error: profileError } = await supabase
           .from('users')
-          .select(`
-            *,
-            user_profiles(avatar_url)
-          `)
+          .select('*')
           .eq('email', session.user.email)
           .single();
 
@@ -138,7 +147,8 @@ const StudentDashboard = () => {
           fetchRoomDetails(),
           fetchPayments(),
           fetchComplaints(),
-          fetchLeaveRequests()
+          fetchLeaveRequests(),
+          fetchNotifications()
         ]).catch(error => {
           console.error('Error fetching dashboard data:', error);
         });
@@ -152,6 +162,58 @@ const StudentDashboard = () => {
     fetchUserData();
   }, [navigate]);
 
+  // Fetch unread payment_due notification on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const res = await fetch('http://localhost:3002/api/notifications?type=payment_due&is_read=false&limit=1', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        const json = await res.json();
+        if (res.ok && json.success && json.data.notifications.length > 0) {
+          setDueNotification(json.data.notifications[0]);
+          setShowPaymentDuePopup(true);
+        }
+      } catch (_) {}
+    })();
+  }, []);
+
+  const parsePaymentFromNotification = (n) => {
+    if (!n) return {};
+    const msg = n.message || '';
+    const m = msg.match(/₹([\d.]+).*for\s(.+?)\s\(ID:.*\)\sby\s(.+)$/i);
+    const amount = m ? parseFloat(m[1]) : 0;
+    const typeText = m ? m[2] : '';
+    const mapType = (t) => {
+      const key = t.toLowerCase().replace(/\s+/g, '_');
+      return ['room_rent','mess_fees','security_deposit','other'].includes(key) ? key : 'other';
+    };
+    return { amount, payment_type: mapType(typeText) };
+  };
+
+  const handleDueProceed = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && dueNotification) {
+        await fetch(`http://localhost:3002/api/notifications/${dueNotification.id}/read`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+      }
+    } catch (_) {}
+    setShowPaymentDuePopup(false);
+  };
+
+  const openPayFromDue = async (method) => {
+    const info = parsePaymentFromNotification(dueNotification);
+    setSelectedPayment({ amount: info.amount, payment_type: info.payment_type });
+    setPaymentForm(prev => ({ ...prev, payment_method: method }));
+    setShowPaymentDuePopup(false);
+    setShowPaymentModal(true);
+  };
+
   // Refetch complaints when filters change
   useEffect(() => {
     fetchComplaints();
@@ -162,56 +224,45 @@ const StudentDashboard = () => {
     fetchLeaveRequests();
   }, [leaveStatusFilter]);
 
+
   const fetchRoomDetails = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Single optimized query to get room details with hostel and roommates
-      const { data: roomData, error: roomError } = await supabase
-        .from('rooms')
-        .select(`
-          *,
-          hostels(name, address, city, phone),
-          users!rooms_room_id_fkey(id, full_name, email)
-        `)
-        .eq('users.email', session.user.email)
+      // Simplified query to get room details from user_profiles
+      const { data: profileData, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('room_id, join_date')
+        .eq('user_id', session.user.id)
         .maybeSingle();
 
-      if (roomError) {
-        console.error('Error fetching room details:', roomError);
-        // If table doesn't exist or no rows found, set null
-        if (
-          roomError.code === 'PGRST116' ||
-          (roomError.message?.includes('relation') && roomError.message?.includes('does not exist'))
-        ) {
-          setRoomDetails(null);
-          return;
-        }
+      if (profileError) {
+        console.error('Error fetching room details:', profileError);
+        setRoomDetails(null);
         return;
       }
 
-      if (roomData) {
-        // Filter out current user from roommates
-        const roommates = roomData.users?.filter(roommate => roommate.email !== session.user.email) || [];
-        
+      if (profileData && profileData.room_id) {
         setRoomDetails({
-          id: roomData.id,
-          roomNumber: roomData.room_number,
-          floor: roomData.floor,
-          roomType: roomData.room_type,
-          capacity: roomData.capacity,
-          occupied: roomData.occupied,
-          price: roomData.price,
-          status: roomData.status,
+          id: profileData.room_id,
+          roomNumber: profileData.room_id,
+          floor: 'N/A',
+          roomType: 'Standard',
+          capacity: 2,
+          occupied: 1,
+          price: 0,
+          status: 'active',
           hostel: {
-            name: roomData.hostels?.name || 'N/A',
-            address: roomData.hostels?.address || 'N/A',
-            city: roomData.hostels?.city || 'N/A',
-            phone: roomData.hostels?.phone || 'N/A'
+            name: 'N/A',
+            address: 'N/A',
+            city: 'N/A',
+            phone: 'N/A'
           },
-          roommates: roommates
+          roommates: []
         });
+      } else {
+        setRoomDetails(null);
       }
     } catch (error) {
       console.error('Error fetching room details:', error);
@@ -225,34 +276,30 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Fetch payments from Supabase
-      const { data: paymentsData, error: paymentsError } = await supabase
-        .from('payments')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('due_date', { ascending: false })
-        .limit(10);
-
-      if (paymentsError) {
-        console.error('Error fetching payments:', paymentsError);
-        // If table doesn't exist, just set empty array
-        if (paymentsError.message?.includes('relation') && paymentsError.message?.includes('does not exist')) {
-          setPayments([]);
-          return;
+      // Fetch payments from backend API
+      const response = await fetch('http://localhost:3002/api/payments/student', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
         }
+      });
+
+      if (!response.ok) {
+        console.error('Error fetching payments:', response.statusText);
+        setPayments([]);
         return;
       }
 
-      setPayments(paymentsData.map(payment => ({
-        id: payment.id,
-        month: payment.month_year || new Date(payment.due_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-        amount: payment.amount,
-        status: payment.status,
-        dueDate: payment.due_date,
-        paidDate: payment.paid_date
-      })));
+      const result = await response.json();
+      if (result.success) {
+        setPayments(result.data.payments || []);
+      } else {
+        console.error('Error fetching payments:', result.message);
+        setPayments([]);
+      }
     } catch (error) {
       console.error('Error fetching payments:', error);
+      setPayments([]);
     } finally {
       setDataLoading(prev => ({ ...prev, payments: false }));
     }
@@ -351,13 +398,67 @@ const StudentDashboard = () => {
     }
   };
 
-  const fetchStudentProfile = async () => {
+  const fetchNotifications = async () => {
+    setDataLoading(prev => ({ ...prev, notifications: true }));
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      const { data: notifications, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        console.error('Error fetching notifications:', error);
+        setNotifications([]);
+      } else {
+        setNotifications(notifications || []);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      setNotifications([]);
+    } finally {
+      setDataLoading(prev => ({ ...prev, notifications: false }));
+    }
+  };
+
+  const fetchStudentProfile = async () => {
+    try {
+      console.log('🚀 fetchStudentProfile called');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.log('❌ No session found');
+        return;
+      }
+      console.log('✅ Session found:', {
+        email: session.user.email,
+        id: session.user.id,
+        role: session.user.role,
+        created_at: session.user.created_at,
+        user_metadata: session.user.user_metadata,
+        app_metadata: session.user.app_metadata
+      });
+      
+      // Log session info for debugging
+      console.log('✅ Session user ID:', session.user.id);
+      console.log('🔑 Access token preview:', session.access_token ? session.access_token.substring(0, 50) + '...' : 'NO TOKEN');
+
+      // Check if access token exists and is valid
+      if (!session.access_token) {
+        console.error('❌ No access token in session');
+        setHasProfile(false);
+        return;
+      }
+
+      // Get admission number for cache key
+      const admissionNumber = session.user.user_metadata?.username || session.user.user_metadata?.admission_number || session.user.email;
+      
       // Check cache first
-      const cacheKey = `profile_${session.user.id}`;
+      const cacheKey = `profile_${admissionNumber}`;
       if (dataCache[cacheKey] && Date.now() - dataCache[cacheKey].timestamp < 30000) { // 30 second cache
         const cachedData = dataCache[cacheKey].data;
         setHasProfile(true);
@@ -368,20 +469,26 @@ const StudentDashboard = () => {
         return;
       }
 
-      // Single optimized query to get profile with completion data
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
-        .select(`
-          *,
-          users(full_name, email, phone),
-          rooms(room_number, floor, room_type)
-        `)
-        .eq('user_id', session.user.id)
-        .maybeSingle();
+      // Query admission registry via API endpoint (bypasses RLS)
+      console.log('🔍 Making API call for student profile:', session.user.email);
+      
+      const response = await fetch('http://localhost:3002/api/student-profile', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const result = await response.json();
+      console.log('🔍 API response:', result);
+      
+      const profileData = result.success ? result.data : null;
+      const profileError = result.success ? null : result;
       
       if (profileError) {
-        console.error('Error fetching student profile:', profileError);
-        if (profileError.code === 'PGRST116') {
+        console.error('❌ Error fetching student profile:', profileError);
+        if (profileError.error === 'Student profile not found') {
           setHasProfile(false);
           return;
         }
@@ -390,12 +497,13 @@ const StudentDashboard = () => {
       }
 
       if (profileData) {
+        console.log('✅ Profile data found, setting hasProfile to true');
         setHasProfile(true);
         setStudentProfile(profileData);
 
         // Calculate completion status directly from profile data
         const requiredFields = [
-          'admission_number', 'course', 'batch_year', 'date_of_birth', 'gender',
+          'admission_number', 'course', 'batch_year', 'date_of_birth',
           'address', 'city', 'state', 'country', 'emergency_contact_name',
           'emergency_contact_phone', 'parent_name', 'parent_phone', 'parent_email',
           'aadhar_number', 'blood_group'
@@ -431,9 +539,10 @@ const StudentDashboard = () => {
           timestamp: Date.now()
         }));
       } else {
+        console.log('❌ No profile data found, setting hasProfile to false');
         setHasProfile(false);
         // Cache the no profile status
-        const statusCacheKey = `profile_status_${session.user.id}`;
+        const statusCacheKey = `profile_status_${admissionNumber}`;
         localStorage.setItem(statusCacheKey, JSON.stringify({
           hasProfile: false,
           profileStatus: 'incomplete',
@@ -550,6 +659,7 @@ const StudentDashboard = () => {
     { id: 'student-profile', label: 'Student Profile', icon: User },
     { id: 'room-allocation', label: 'Room Allocation', icon: UserCheck },
     { id: 'payments', label: 'Payments', icon: CreditCard },
+    { id: 'cleaning', label: 'Cleaning Requests', icon: Building2 },
     { id: 'complaints', label: 'Complaints', icon: AlertCircle },
     { id: 'leave', label: 'Leave Requests', icon: Calendar },
     { id: 'profile', label: 'Account Settings', icon: Settings }
@@ -577,34 +687,22 @@ const StudentDashboard = () => {
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-slate-800">⚠️ Profile Required</h3>
-                <p className="text-slate-600">You must complete your student profile before accessing hostel services.</p>
+                <p className="text-slate-600">Your student profile has not been created yet. Please contact the hostel administration to create your profile.</p>
               </div>
-              <button
-                onClick={handleCreateProfile}
-                className="px-6 py-3 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-xl hover:from-red-700 hover:to-orange-700 transition-all font-medium"
-              >
-                Create Profile
-              </button>
             </div>
           </div>
         )}
 
         {hasProfile === true && profileStatus === 'incomplete' && (
-          <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-2xl p-6">
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-6">
             <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-orange-600 rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl flex items-center justify-center">
                 <AlertCircle className="w-6 h-6 text-white" />
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-slate-800">⚠️ Profile Incomplete ({profileCompletion}%)</h3>
-                <p className="text-slate-600">Complete your profile to access all hostel features and services.</p>
+                <p className="text-slate-600">Your profile is incomplete. Please contact the hostel administration to complete your profile information.</p>
               </div>
-              <button
-                onClick={handleEditProfile}
-                className="px-6 py-3 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-xl hover:from-red-700 hover:to-orange-700 transition-all font-medium"
-              >
-                Complete Profile
-              </button>
             </div>
           </div>
         )}
@@ -753,6 +851,43 @@ const StudentDashboard = () => {
           </div>
         </div>
 
+        {/* Notifications */}
+        {notifications.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-slate-800">Recent Notifications</h2>
+              <div className="text-sm text-slate-500">{notifications.length} unread</div>
+            </div>
+            
+            <div className="space-y-4">
+              {notifications.slice(0, 5).map((notification) => (
+                <div key={notification.id} className={`flex items-start space-x-4 p-4 rounded-xl transition-colors ${
+                  notification.type === 'room_allocation' ? 'bg-green-50 hover:bg-green-100' :
+                  notification.type === 'payment_due' ? 'bg-yellow-50 hover:bg-yellow-100' :
+                  'bg-blue-50 hover:bg-blue-100'
+                }`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    notification.type === 'room_allocation' ? 'bg-green-100 text-green-600' :
+                    notification.type === 'payment_due' ? 'bg-yellow-100 text-yellow-600' :
+                    'bg-blue-100 text-blue-600'
+                  }`}>
+                    {notification.type === 'room_allocation' ? <Home className="w-5 h-5" /> :
+                     notification.type === 'payment_due' ? <CreditCard className="w-5 h-5" /> :
+                     <Bell className="w-5 h-5" />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-slate-800">{notification.title}</p>
+                    <p className="text-sm text-slate-600">{notification.message}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {new Date(notification.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Recent Activity */}
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
           <div className="flex items-center justify-between mb-6">
@@ -848,54 +983,149 @@ const StudentDashboard = () => {
   };
 
 
-  const renderPayments = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800">Payment History</h2>
-        <button onClick={exportPaymentsCSV} className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-          <Download className="w-4 h-4" />
-          <span>Export</span>
-        </button>
-      </div>
-      
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Month</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Due Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Paid Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {payments.map((payment) => (
-                <tr key={payment.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{payment.month}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">${payment.amount}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{payment.dueDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      payment.status === 'paid' 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {payment.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                    {payment.paidDate || '-'}
-                  </td>
+  const renderPayments = () => {
+    const pendingPayments = payments.filter(p => p.status === 'pending');
+    const paidPayments = payments.filter(p => p.status === 'paid');
+    const overduePayments = payments.filter(p => p.status === 'overdue');
+
+    return (
+      <div className="space-y-6">
+        {/* Payment Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Pending Payments</p>
+                <p className="text-2xl font-bold text-amber-600">{pendingPayments.length}</p>
+              </div>
+              <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+                <Clock className="w-6 h-6 text-amber-600" />
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-2xl shadow-lg border border-green-100 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Paid Payments</p>
+                <p className="text-2xl font-bold text-green-600">{paidPayments.length}</p>
+              </div>
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-2xl shadow-lg border border-red-100 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Overdue</p>
+                <p className="text-2xl font-bold text-red-600">{overduePayments.length}</p>
+              </div>
+              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment List */}
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
+          <div className="p-6 border-b border-amber-100">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-800">Payment History</h2>
+              <button 
+                onClick={exportPaymentsCSV} 
+                className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export</span>
+              </button>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Amount</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Due Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Paid By</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {payments.map((payment) => (
+                  <tr key={payment.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-slate-900 capitalize">
+                        {payment.payment_type?.replace('_', ' ') || 'Unknown'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                      ₹{payment.amount?.toLocaleString() || '0'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                      {payment.due_date ? new Date(payment.due_date).toLocaleDateString() : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        payment.status === 'paid' 
+                          ? 'bg-green-100 text-green-800' 
+                          : payment.status === 'overdue'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {payment.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                      {payment.paid_by_role ? (
+                        <div>
+                          <div className="font-medium capitalize">{payment.paid_by_role}</div>
+                          {payment.paid_at && (
+                            <div className="text-xs text-slate-500">
+                              {new Date(payment.paid_at).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      ) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {payment.status === 'pending' && (
+                        <button
+                          onClick={() => handlePayNow(payment)}
+                          className="text-amber-600 hover:text-amber-700 font-medium"
+                        >
+                          Pay Now
+                        </button>
+                      )}
+                      {payment.status === 'paid' && (
+                        <div className="flex items-center space-x-1 text-green-600">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-xs">Paid</span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {payments.length === 0 && (
+            <div className="text-center py-12">
+              <CreditCard className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-800 mb-2">No Payments Found</h3>
+              <p className="text-slate-600">You don't have any payment records yet.</p>
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderComplaints = () => {
     const isProfileIncomplete = hasProfile === false || profileStatus === 'incomplete';
@@ -1299,6 +1529,13 @@ const StudentDashboard = () => {
   };
 
   const renderStudentProfile = () => {
+    console.log('🔍 renderStudentProfile called with:', {
+      hasProfile,
+      studentProfile: studentProfile ? 'exists' : 'null',
+      showProfileForm,
+      dataLoading: dataLoading.profile
+    });
+    
     if (showProfileForm) {
       return (
         <StudentProfileForm
@@ -1311,201 +1548,37 @@ const StudentDashboard = () => {
       );
     }
 
-    if (!hasProfile) {
+    // Show loading state while profile is being fetched
+    if (hasProfile === null || dataLoading.profile) {
       return (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-8 text-center">
             <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6">
-              <User className="w-10 h-10 text-white" />
+              <Loader2 className="w-10 h-10 text-white animate-spin" />
             </div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-4">Complete Your Student Profile</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mb-4">Loading Profile...</h2>
             <p className="text-slate-600 mb-8 max-w-md mx-auto">
-              Create your student profile to access all hostel features, including room allocation, 
-              payment tracking, and administrative services.
+              Please wait while we load your student profile information.
             </p>
-            <button
-              onClick={handleCreateProfile}
-              className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all font-medium"
-            >
-              Create Student Profile
-            </button>
           </div>
         </div>
       );
     }
 
-    return (
-      <div className="space-y-6">
-        {/* Profile Header */}
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-6">
-              <div className="relative group">
-                <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-br from-blue-400 via-purple-500 to-indigo-600 p-1 shadow-xl hover:shadow-2xl transition-all duration-300">
-                  <div className="w-full h-full rounded-full overflow-hidden bg-white p-1">
-                    {studentProfile?.avatar_url ? (
-                      <img 
-                        src={studentProfile.avatar_url} 
-                        alt="Profile" 
-                        className="w-full h-full object-cover rounded-full transition-all duration-300 group-hover:scale-110 group-hover:brightness-110" 
-                      />
-                    ) : (
-                      <div className="w-full h-full rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center group-hover:from-blue-600 group-hover:to-purple-700 transition-all duration-300">
-                        <User className="w-10 h-10 text-white" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {/* Status indicator */}
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 border-2 border-white rounded-full flex items-center justify-center shadow-sm">
-                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                </div>
-                {/* Hover effect ring */}
-                <div className="absolute inset-0 rounded-full border-2 border-transparent group-hover:border-blue-300 transition-all duration-300"></div>
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-slate-800">{studentProfile?.users?.full_name || user.fullName}</h2>
-                <p className="text-slate-600">{studentProfile?.admission_number}</p>
-                <p className="text-sm text-slate-500">{studentProfile?.course} • Batch {studentProfile?.batch_year}</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="text-right">
-                <div className="text-sm text-slate-500">Profile Completion</div>
-                <div className="text-lg font-semibold text-slate-800">
-                  {profileCompletion !== null ? `${profileCompletion}%` : 'Loading...'}
-                </div>
-              </div>
-              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center">
-                {profileCompletion !== null ? (
-                  <div 
-                    className="w-8 h-8 rounded-full border-4 border-slate-200"
-                    style={{
-                      background: `conic-gradient(from 0deg, #3b82f6 0deg, #3b82f6 ${profileCompletion * 3.6}deg, #e2e8f0 ${profileCompletion * 3.6}deg)`
-                    }}
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full border-4 border-slate-200 animate-pulse bg-slate-200" />
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                profileStatus === null 
-                  ? 'bg-slate-100 text-slate-600 animate-pulse' 
-                  : studentProfile?.profile_status === 'active' 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-yellow-100 text-yellow-800'
-              }`}>
-                {profileStatus === null ? 'Loading...' : (studentProfile?.profile_status === 'active' ? 'Active' : 'Inactive')}
-              </span>
-              {studentProfile?.rooms && (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                  Room {studentProfile.rooms.room_number}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={handleEditProfile}
-              className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
-            >
-              <Edit className="w-4 h-4" />
-              <span>Edit Profile</span>
-            </button>
-          </div>
-        </div>
+    if (!hasProfile) {
+      return (
+        <StudentProfileForm
+          onSuccess={handleProfileSuccess}
+          onCancel={handleCancelProfile}
+          initialData={null}
+          isEdit={false}
+          showHeader={false}
+        />
+      );
+    }
 
-        {/* Profile Details */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Personal Information */}
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Personal Information</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-600">Date of Birth</label>
-                <p className="text-slate-800">{studentProfile?.date_of_birth ? new Date(studentProfile.date_of_birth).toLocaleDateString() : 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Gender</label>
-                <p className="text-slate-800 capitalize">{studentProfile?.gender || 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Blood Group</label>
-                <p className="text-slate-800">{studentProfile?.blood_group || 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Aadhar Number</label>
-                <p className="text-slate-800">{studentProfile?.aadhar_number || 'Not provided'}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Contact Information */}
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Contact Information</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-600">Address</label>
-                <p className="text-slate-800">{studentProfile?.address || 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">City, State</label>
-                <p className="text-slate-800">{studentProfile?.city && studentProfile?.state ? `${studentProfile.city}, ${studentProfile.state}` : 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Country</label>
-                <p className="text-slate-800">{studentProfile?.country || 'Not provided'}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Emergency Contact */}
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Emergency Contact</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-600">Contact Name</label>
-                <p className="text-slate-800">{studentProfile?.emergency_contact_name || 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Contact Phone</label>
-                <p className="text-slate-800">{studentProfile?.emergency_contact_phone || 'Not provided'}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Parent Information */}
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Parent/Guardian</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-600">Name</label>
-                <p className="text-slate-800">{studentProfile?.parent_name || 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Phone</label>
-                <p className="text-slate-800">{studentProfile?.parent_phone || 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Email</label>
-                <p className="text-slate-800">{studentProfile?.parent_email || 'Not provided'}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Bio */}
-        {studentProfile?.bio && (
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">About</h3>
-            <p className="text-slate-700">{studentProfile.bio}</p>
-          </div>
-        )}
-      </div>
-    );
+    // Show read-only profile view
+    return <StudentProfileView studentProfile={studentProfile} user={user} />;
   };
 
   const renderProfile = () => (
@@ -1517,9 +1590,9 @@ const StudentDashboard = () => {
             <div className="relative group">
               <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-2 shadow-2xl hover:shadow-3xl transition-all duration-300">
                 <div className="w-full h-full rounded-full overflow-hidden bg-white p-1">
-                  {user?.user_profiles?.avatar_url ? (
+                  {user?.avatar_url ? (
                     <img 
-                      src={user.user_profiles.avatar_url} 
+                      src={user.avatar_url} 
                       alt="Profile" 
                       className="w-full h-full object-cover"
                     />
@@ -1540,12 +1613,6 @@ const StudentDashboard = () => {
               </div>
             </div>
           </div>
-          <button
-            onClick={handleEditProfile}
-            className="px-6 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl hover:from-amber-700 hover:to-orange-700 transition-all font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
-          >
-            Edit Profile
-          </button>
         </div>
 
         {/* Error Display */}
@@ -2061,13 +2128,15 @@ const StudentDashboard = () => {
       alert('No payments to export');
       return;
     }
-    const headers = ['Month', 'Amount', 'Due Date', 'Status', 'Paid Date'];
+    const headers = ['Payment Type', 'Amount', 'Due Date', 'Status', 'Paid By', 'Paid Date', 'Transaction Reference'];
     const rows = payments.map(p => [
-      `"${p.month}"`,
-      p.amount,
-      `"${p.dueDate || ''}"`,
-      `"${p.status}"`,
-      `"${p.paidDate || ''}"`
+      `"${p.payment_type?.replace('_', ' ') || 'Unknown'}"`,
+      p.amount || 0,
+      `"${p.due_date ? new Date(p.due_date).toLocaleDateString() : ''}"`,
+      `"${p.status || 'pending'}"`,
+      `"${p.paid_by_role || ''}"`,
+      `"${p.paid_at ? new Date(p.paid_at).toLocaleDateString() : ''}"`,
+      `"${p.transaction_reference || ''}"`
     ]);
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -2079,6 +2148,57 @@ const StudentDashboard = () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handlePayNow = (payment) => {
+    setSelectedPayment(payment);
+    setPaymentForm({
+      payment_method: 'online',
+      transaction_reference: ''
+    });
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSubmit = async () => {
+    if (!selectedPayment || !paymentForm.payment_method) return;
+    
+    setIsSubmitting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        showNotification('Not authenticated', 'error');
+        return;
+      }
+
+      const response = await fetch(`http://localhost:3002/api/payments/${selectedPayment.id}/pay`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          payment_method: paymentForm.payment_method,
+          transaction_reference: paymentForm.transaction_reference,
+          paid_by_role: 'student'
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Payment failed');
+      }
+
+      showNotification('Payment marked as paid successfully!', 'success');
+      setShowPaymentModal(false);
+      setSelectedPayment(null);
+      fetchPayments(); // Refresh payments
+    } catch (error) {
+      console.error('Payment error:', error);
+      showNotification(error.message || 'Failed to process payment', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Edit complaint flow
@@ -2484,13 +2604,15 @@ const StudentDashboard = () => {
         return <StudentRoomRequest />;
       case 'payments':
         return renderPayments();
+      case 'cleaning':
+        return <StudentCleaningRequest />;
       case 'complaints':
         return renderComplaints();
       case 'leave':
         return renderLeaveRequests();
       case 'profile':
         return renderProfile();
-default:
+      default:
         return renderOverview();
     }
   };
@@ -2521,9 +2643,9 @@ default:
             <div className="relative group">
               <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-0.5 shadow-lg hover:shadow-xl transition-all duration-300">
                 <div className="w-full h-full rounded-full overflow-hidden bg-white p-0.5">
-                  {(user?.avatarUrl || user?.user_profiles?.avatar_url) ? (
+                  {user?.avatar_url ? (
                     <img 
-                      src={user.avatarUrl || user.user_profiles.avatar_url}
+                      src={user.avatar_url}
                       alt="Profile" 
                       className="w-full h-full object-cover rounded-full transition-all duration-300 group-hover:scale-105 group-hover:brightness-110" 
                     />
@@ -2600,7 +2722,7 @@ default:
 
         {/* Content Area */}
         <main className="p-6">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto relative">
             {renderContent()}
           </div>
         </main>
@@ -2611,6 +2733,128 @@ default:
       <LeaveRequestModal />
       <EditComplaintModal />
       <EditLeaveModal />
+      
+      {/* Payment Modal */}
+      {showPaymentModal && selectedPayment && (
+        <div 
+          className="fixed inset-0 flex items-start justify-center z-50 pt-8"
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowPaymentModal(false); setSelectedPayment(null); } }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 border border-slate-200">
+            <div className="p-6 border-b border-amber-100">
+              <h3 className="text-xl font-semibold text-slate-800">Make Payment</h3>
+              <p className="text-slate-600 mt-1">Complete your payment for this item</p>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Payment Details */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-slate-600">Payment Type:</span>
+                  <span className="text-sm text-slate-900 capitalize">
+                    {selectedPayment.payment_type?.replace('_', ' ') || 'Unknown'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-slate-600">Amount:</span>
+                  <span className="text-lg font-bold text-slate-900">
+                    ₹{selectedPayment.amount?.toLocaleString() || '0'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-slate-600">Due Date:</span>
+                  <span className="text-sm text-slate-900">
+                    {selectedPayment.due_date ? new Date(selectedPayment.due_date).toLocaleDateString() : 'Not set'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Payment Form */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Payment Method
+                  </label>
+                  <select
+                    value={paymentForm.payment_method}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, payment_method: e.target.value }))}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  >
+                    <option value="online">Online Payment</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cash">Cash</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Transaction Reference (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentForm.transaction_reference}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, transaction_reference: e.target.value }))}
+                    placeholder="Enter transaction ID or reference number"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Important Note */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800 mb-1">Important Note</p>
+                    <p className="text-sm text-amber-700">
+                      This will mark the payment as paid. Please ensure you have actually completed the payment before confirming.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-amber-100 flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  setSelectedPayment(null);
+                }}
+                className="flex-1 px-4 py-3 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePaymentSubmit}
+                disabled={isSubmitting || !paymentForm.payment_method}
+                className="flex-1 px-4 py-3 bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isSubmitting ? 'Processing...' : 'Confirm Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPaymentDuePopup && dueNotification && (
+        <div className="fixed inset-0 flex items-start justify-center z-50 pt-6" onClick={(e)=>{ if(e.target===e.currentTarget) setShowPaymentDuePopup(false); }}>
+          <div className="bg-white rounded-2xl shadow-2xl border border-amber-200 max-w-lg w-full mx-4">
+            <div className="p-5 border-b border-amber-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800">Payment Due</h3>
+              <button className="text-slate-400 hover:text-slate-600" onClick={()=>setShowPaymentDuePopup(false)}><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5">
+              <p className="text-slate-700">{dueNotification.message}</p>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button onClick={()=>openPayFromDue('online')} className="px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700">Pay Online</button>
+                <button onClick={()=>openPayFromDue('cash')} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50">Pay Offline</button>
+                <button onClick={handleDueProceed} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50">Proceed</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

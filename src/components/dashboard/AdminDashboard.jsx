@@ -40,6 +40,7 @@ import {
   X,
   Star
 } from 'lucide-react';
+import ChatWidget from '../ui/ChatWidget';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -54,7 +55,7 @@ const AdminDashboard = () => {
   const [payments, setPayments] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [analytics, setAnalytics] = useState(null);
-  const [hostels, setHostels] = useState([]);
+  // Removed hostels state for single-hostel system
   const [hostelRooms, setHostelRooms] = useState([]);
   const [showHostelModal, setShowHostelModal] = useState(false);
   const [showRoomModal, setShowRoomModal] = useState(false);
@@ -166,11 +167,10 @@ const AdminDashboard = () => {
   const [availableRooms, setAvailableRooms] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [roomFormData, setRoomFormData] = useState({
+    block: '',
     room_number: '',
     floor: '',
     room_type: '',
-    capacity: '',
-    price: '',
     amenities: []
   });
   const [roomFormErrors, setRoomFormErrors] = useState({});
@@ -218,7 +218,7 @@ const AdminDashboard = () => {
           if (['admin', 'hostel_operations_assistant', 'warden'].includes(role)) {
             fetchDashboardStats();
             fetchStudents();
-            fetchHostels();
+            // Skip hostels fetch for single-hostel system
             fetchRooms();
             fetchComplaints();
             fetchPayments();
@@ -439,16 +439,16 @@ const AdminDashboard = () => {
     e.preventDefault();
     
       // Validate all fields before submission
-      const fieldsToValidate = ['room_number', 'room_type', 'floor', 'capacity', 'price'];
+      const fieldsToValidate = ['block', 'room_number', 'room_type', 'floor'];
       let hasErrors = false;
       
       fieldsToValidate.forEach(field => {
         validateRoomField(field, roomFormData[field]);
         if (roomFormErrors[field] || 
+            (field === 'block' && !roomFormData[field]) || 
             (field === 'room_number' && !roomFormData[field].trim()) || 
             (field === 'room_type' && !roomFormData[field]) ||
-            (field === 'capacity' && (!roomFormData[field] || roomFormData[field] < 1)) ||
-            (field === 'floor' && roomFormData[field] && (parseInt(roomFormData[field]) < 1 || parseInt(roomFormData[field]) > 8))) {
+            (field === 'floor' && (!roomFormData[field] || parseInt(roomFormData[field]) < 1 || parseInt(roomFormData[field]) > 4))) {
           hasErrors = true;
         }
       });
@@ -460,35 +460,30 @@ const AdminDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Calculate the full price before sending to API
-      let calculatedPrice = null;
-      if (selectedRoomTypeData) {
-        const basePrice = selectedRoomTypeData.rentAmount || 0;
-        const amenitiesPrice = (selectedRoomTypeData.amenities || []).reduce((total, amenity) => 
-          total + (amenityPricing[amenity] || 0), 0);
-        calculatedPrice = basePrice + amenitiesPrice;
-        
-        console.log('Room Price Calculation:', {
-          roomNumber: roomFormData.room_number,
-          roomType: selectedRoomTypeData.name,
-          basePrice,
-          amenities: selectedRoomTypeData.amenities,
-          amenitiesPrice,
-          totalPrice: calculatedPrice,
-          amenityPricing: selectedRoomTypeData.amenities.map(amenity => ({
-            amenity,
-            price: amenityPricing[amenity] || 0
-          }))
-        });
+      // Auto-determine capacity and pricing based on room type
+      const roomTypeConfig = {
+        'single': { capacity: 1, price: 28000 },
+        'double': { capacity: 2, price: 23000 },
+        'triple': { capacity: 3, price: 20000 }
+      };
+
+      const config = roomTypeConfig[roomFormData.room_type];
+      if (!config) {
+        showNotification('Invalid room type selected', 'error');
+        return;
       }
 
+      // Create full room number with block
+      const fullRoomNumber = `${roomFormData.block}${roomFormData.floor}${roomFormData.room_number}`;
+
       const roomData = {
-        room_number: roomFormData.room_number,
-        floor: roomFormData.floor || null,
+        room_number: fullRoomNumber,
+        floor: parseInt(roomFormData.floor),
         room_type: roomFormData.room_type,
-        capacity: parseInt(roomFormData.capacity),
-        price: calculatedPrice || (roomFormData.price ? parseFloat(roomFormData.price) : null),
-        amenities: roomFormData.amenities
+        capacity: config.capacity,
+        price: config.price,
+        amenities: roomFormData.amenities,
+        status: 'available'
       };
 
       console.log('Sending room data to API:', roomData);
@@ -508,17 +503,16 @@ const AdminDashboard = () => {
         
         setShowAddRoomForm(false);
         setRoomFormData({
+          block: '',
           room_number: '',
           floor: '',
           room_type: '',
-          capacity: '',
-          price: '',
           amenities: []
         });
         setSelectedRoomTypeData(null);
         setRoomFormErrors({});
         await fetchRoomsDashboardData();
-        showNotification(`Room added successfully! Price: ₹${calculatedPrice || 'N/A'}`, 'success');
+        showNotification(`Room ${fullRoomNumber} added successfully! Price: ₹${config.price}`, 'success');
       } else {
         let errorMessage = 'Failed to add room';
         try {
@@ -788,11 +782,34 @@ const AdminDashboard = () => {
 
       if (response.ok) {
         const result = await response.json();
-        const availableRooms = result.data.rooms.filter(room => 
+        let availableRooms = result.data.rooms.filter(room => 
           room.status === 'available' && room.occupied < room.capacity
         );
+
+        // If the request encoded a specific room in special_requirements, restrict to only that room
+        let requestedRoomId = null;
+        const sr = request?.special_requirements;
+        if (typeof sr === 'string') {
+          const m = sr.match(/REQUESTED_ROOM_ID:([0-9a-fA-F-]{36})/);
+          if (m) requestedRoomId = m[1];
+        }
+        if (requestedRoomId) {
+          availableRooms = availableRooms.filter(r => r.id === requestedRoomId);
+        } else if (typeof sr === 'string') {
+          // Legacy: parse room number from free text like "Requesting Room 203 specifically"
+          const numMatch = sr.match(/Room\s+(\d+)/i);
+          if (numMatch && numMatch[1]) {
+            availableRooms = availableRooms.filter(r => String(r.room_number) === String(numMatch[1]));
+          }
+        }
         setAvailableRooms(availableRooms);
         setRequestToAllocate(request);
+        // If exactly one option remains, preselect it and disable changes
+        if (availableRooms.length === 1) {
+          setSelectedRoomId(availableRooms[0].id);
+        } else {
+          setSelectedRoomId('');
+        }
         setShowRoomAllocationModal(true);
       } else {
         showNotification('Failed to fetch available rooms', 'error');
@@ -1245,14 +1262,14 @@ const AdminDashboard = () => {
       // Recent user registrations
       const { data: recentUsers } = await supabase
         .from('users')
-        .select('full_name, email, role, created_at, updated_at')
+        .select('id, full_name, email, role, created_at, updated_at')
         .order('created_at', { ascending: false })
         .limit(5);
 
       if (recentUsers) {
         recentUsers.forEach(user => {
           activities.push({
-            id: `user-${user.created_at}`,
+            id: `user-${user.id}-${user.created_at}`,
             type: 'user_registration',
             title: 'New User Registered',
             description: `${user.full_name} (${user.role}) joined the system`,
@@ -1280,7 +1297,7 @@ const AdminDashboard = () => {
             .single();
           
           activities.push({
-            id: `profile-${profile.updated_at}`,
+            id: `profile-${profile.user_id}-${profile.updated_at}`,
             type: 'profile_update',
             title: 'Profile Updated',
             description: `${user?.full_name || 'User'} updated their profile`,
@@ -1294,7 +1311,7 @@ const AdminDashboard = () => {
       // Recent complaints
       const { data: recentComplaints } = await supabase
         .from('complaints')
-        .select('title, status, created_at, updated_at, user_id')
+        .select('id, title, status, created_at, updated_at, user_id')
         .order('created_at', { ascending: false })
         .limit(5);
 
@@ -1307,7 +1324,7 @@ const AdminDashboard = () => {
             .single();
           
           activities.push({
-            id: `complaint-${complaint.created_at}`,
+            id: `complaint-${complaint.id}-${complaint.created_at}`,
             type: 'complaint',
             title: 'New Complaint',
             description: `${complaint.title} by ${user?.full_name || 'User'} - Status: ${complaint.status}`,
@@ -1321,7 +1338,7 @@ const AdminDashboard = () => {
       // Recent complaint updates
       const { data: complaintUpdates } = await supabase
         .from('complaints')
-        .select('title, status, updated_at, user_id')
+        .select('id, title, status, updated_at, user_id')
         .not('updated_at', 'is', null)
         .order('updated_at', { ascending: false })
         .limit(3);
@@ -1329,7 +1346,7 @@ const AdminDashboard = () => {
       if (complaintUpdates) {
         for (const complaint of complaintUpdates) {
           activities.push({
-            id: `complaint-update-${complaint.updated_at}`,
+            id: `complaint-update-${complaint.id}-${complaint.updated_at}`,
             type: 'complaint_update',
             title: 'Complaint Updated',
             description: `${complaint.title} status changed to ${complaint.status}`,
@@ -1343,7 +1360,7 @@ const AdminDashboard = () => {
       // Recent payments
       const { data: recentPayments } = await supabase
         .from('payments')
-        .select('amount, status, created_at, updated_at, user_id')
+        .select('id, amount, status, created_at, updated_at, user_id')
         .order('created_at', { ascending: false })
         .limit(5);
 
@@ -1356,7 +1373,7 @@ const AdminDashboard = () => {
             .single();
           
           activities.push({
-            id: `payment-${payment.created_at}`,
+            id: `payment-${payment.id}-${payment.created_at}`,
             type: 'payment',
             title: 'Payment Processed',
             description: `$${payment.amount} by ${user?.full_name || 'User'} - Status: ${payment.status}`,
@@ -1370,7 +1387,7 @@ const AdminDashboard = () => {
       // Recent leave requests
       const { data: recentLeaves } = await supabase
         .from('leave_requests')
-        .select('reason, status, created_at, updated_at, user_id')
+        .select('id, reason, status, created_at, updated_at, user_id')
         .order('created_at', { ascending: false })
         .limit(5);
 
@@ -1383,7 +1400,7 @@ const AdminDashboard = () => {
             .single();
           
           activities.push({
-            id: `leave-${leave.created_at}`,
+            id: `leave-${leave.id}-${leave.created_at}`,
             type: 'leave_request',
             title: 'Leave Request',
             description: `${leave.reason} by ${user?.full_name || 'User'} - Status: ${leave.status}`,
@@ -1397,7 +1414,7 @@ const AdminDashboard = () => {
       // Recent leave request updates
       const { data: leaveUpdates } = await supabase
         .from('leave_requests')
-        .select('reason, status, updated_at, user_id')
+        .select('id, reason, status, updated_at, user_id')
         .not('updated_at', 'is', null)
         .order('updated_at', { ascending: false })
         .limit(3);
@@ -1405,7 +1422,7 @@ const AdminDashboard = () => {
       if (leaveUpdates) {
         for (const leave of leaveUpdates) {
           activities.push({
-            id: `leave-update-${leave.updated_at}`,
+            id: `leave-update-${leave.id}-${leave.updated_at}`,
             type: 'leave_update',
             title: 'Leave Request Updated',
             description: `${leave.reason} status changed to ${leave.status}`,
@@ -1419,7 +1436,7 @@ const AdminDashboard = () => {
       // Recent room allocations
       const { data: roomAllocations } = await supabase
         .from('room_allocations')
-        .select('created_at, user_id, room_id')
+        .select('id, created_at, user_id, room_id')
         .order('created_at', { ascending: false })
         .limit(3);
 
@@ -1438,7 +1455,7 @@ const AdminDashboard = () => {
             .single();
           
           activities.push({
-            id: `allocation-${allocation.created_at}`,
+            id: `allocation-${allocation.id}-${allocation.created_at}`,
             type: 'room_allocation',
             title: 'Room Allocated',
             description: `${user?.full_name || 'User'} assigned to Room ${room?.room_number || 'Unknown'}`,
@@ -1452,7 +1469,7 @@ const AdminDashboard = () => {
       // Recent room requests
       const { data: roomRequests } = await supabase
         .from('room_requests')
-        .select('created_at, status, user_id')
+        .select('id, created_at, status, user_id')
         .order('created_at', { ascending: false })
         .limit(3);
 
@@ -1465,7 +1482,7 @@ const AdminDashboard = () => {
             .single();
           
           activities.push({
-            id: `room-request-${request.created_at}`,
+            id: `room-request-${request.id}-${request.created_at}`,
             type: 'room_request',
             title: 'Room Request',
             description: `${user?.full_name || 'User'} requested a room - Status: ${request.status}`,
@@ -1479,7 +1496,7 @@ const AdminDashboard = () => {
       // Recent notifications
       const { data: notifications } = await supabase
         .from('notifications')
-        .select('title, message, created_at, user_id')
+        .select('id, title, message, created_at, user_id')
         .order('created_at', { ascending: false })
         .limit(3);
 
@@ -1492,7 +1509,7 @@ const AdminDashboard = () => {
             .single();
           
           activities.push({
-            id: `notification-${notification.created_at}`,
+            id: `notification-${notification.id}-${notification.created_at}`,
             type: 'notification',
             title: 'Notification Sent',
             description: `${notification.title} to ${user?.full_name || 'User'}`,
@@ -1506,7 +1523,7 @@ const AdminDashboard = () => {
       // Recent hostel updates
       const { data: hostelUpdates } = await supabase
         .from('hostels')
-        .select('name, updated_at')
+        .select('id, name, updated_at')
         .not('updated_at', 'is', null)
         .order('updated_at', { ascending: false })
         .limit(1);
@@ -1514,7 +1531,7 @@ const AdminDashboard = () => {
       if (hostelUpdates) {
         for (const hostel of hostelUpdates) {
           activities.push({
-            id: `hostel-update-${hostel.updated_at}`,
+            id: `hostel-update-${hostel.id}-${hostel.updated_at}`,
             type: 'hostel_update',
             title: 'Hostel Settings Updated',
             description: `Hostel information was updated`,
@@ -1528,7 +1545,7 @@ const AdminDashboard = () => {
       // Recent room updates
       const { data: roomUpdates } = await supabase
         .from('rooms')
-        .select('room_number, status, updated_at')
+        .select('id, room_number, status, updated_at')
         .not('updated_at', 'is', null)
         .order('updated_at', { ascending: false })
         .limit(3);
@@ -1536,7 +1553,7 @@ const AdminDashboard = () => {
       if (roomUpdates) {
         for (const room of roomUpdates) {
           activities.push({
-            id: `room-update-${room.updated_at}`,
+            id: `room-update-${room.id}-${room.updated_at}`,
             type: 'room_update',
             title: 'Room Updated',
             description: `Room ${room.room_number} status changed to ${room.status}`,
@@ -2832,6 +2849,68 @@ const AdminDashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-slate-700">
+                      Block <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="block"
+                      value={roomFormData.block}
+                      onChange={handleRoomFormChange}
+                      className={`w-full px-4 py-3 border rounded-xl focus:outline-none transition-all text-slate-700 ${
+                        roomFormErrors.block 
+                          ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
+                          : roomFormData.block && !roomFormErrors.block
+                          ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
+                          : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
+                      }`}
+                    >
+                      <option value="">Select block</option>
+                      <option value="A">Block A</option>
+                      <option value="B">Block B</option>
+                      <option value="C">Block C</option>
+                      <option value="D">Block D</option>
+                    </select>
+                    {roomFormErrors.block && (
+                      <p className="text-sm text-red-600 flex items-center">
+                        <AlertCircle className="w-4 h-4 mr-1" />
+                        {roomFormErrors.block}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Floor <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="floor"
+                      value={roomFormData.floor}
+                      onChange={handleRoomFormChange}
+                      className={`w-full px-4 py-3 border rounded-xl focus:outline-none transition-all text-slate-700 ${
+                        roomFormErrors.floor 
+                          ? 'border-red-300 focus:ring-2 focus:ring-red-500 bg-red-50' 
+                          : roomFormData.floor && !roomFormErrors.floor
+                          ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
+                          : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
+                      }`}
+                    >
+                      <option value="">Select floor</option>
+                      <option value="1">1st Floor</option>
+                      <option value="2">2nd Floor</option>
+                      <option value="3">3rd Floor</option>
+                      <option value="4">4th Floor</option>
+                    </select>
+                    {roomFormErrors.floor && (
+                      <p className="text-sm text-red-600 flex items-center">
+                        <AlertCircle className="w-4 h-4 mr-1" />
+                        {roomFormErrors.floor}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
                       Room Number <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
@@ -2847,7 +2926,7 @@ const AdminDashboard = () => {
                             ? 'border-green-300 focus:ring-2 focus:ring-green-500 bg-green-50'
                             : 'border-slate-300 focus:ring-2 focus:ring-amber-500'
                         }`}
-                        placeholder="e.g., 101, A-205, 3B-12"
+                        placeholder="e.g., 101, 205, 301"
                       />
                       {roomFormData.room_number && !roomFormErrors.room_number && (
                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-green-500">
@@ -2985,14 +3064,12 @@ const AdminDashboard = () => {
                         : 'border-slate-300 focus:ring-2 focus:ring-indigo-500'
                     }`}
                   >
-                    <option value="">Choose a room type...</option>
-                    {availableRoomTypes.map((roomType) => (
-                      <option key={roomType.type} value={roomType.type}>
-                        {roomType.name} • Capacity: {roomType.capacity} • Base Price: ₹{roomType.rentAmount?.toLocaleString()}
-                      </option>
-                    ))}
+                    <option value="">Select room type...</option>
+                    <option value="single">Single (₹28,000)</option>
+                    <option value="double">Double (₹23,000)</option>
+                    <option value="triple">Triple (₹20,000)</option>
                   </select>
-                  <p className="text-xs text-slate-500">All room details will be auto-populated from the selected type</p>
+                  <p className="text-xs text-slate-500">Capacity and pricing will be auto-determined based on room type</p>
                   {roomFormErrors.room_type && (
                     <p className="mt-1 text-sm text-red-600">{roomFormErrors.room_type}</p>
                   )}
@@ -5196,13 +5273,29 @@ const AdminDashboard = () => {
               </h1>
               <p className="text-slate-600 group-hover:text-amber-600 transition-colors duration-200">Manage your hostel system</p>
             </div>
+            <div className="ml-auto" />
           </div>
         </header>
 
         {/* Content Area */}
         <main className="p-6">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto relative">
             {renderContent()}
+            <ChatWidget currentUser={user} channels={[
+              { id: 'ops-admin', label: 'Operations' },
+              { id: 'warden-admin', label: 'Warden' },
+              { id: 'admin-parent', label: 'Parents' }
+            ]} />
+            {/* Simple inline chat launcher */}
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('open-chat', { detail: { channel: 'ops-admin' } }))}
+                className="px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700"
+              >
+                Open Chat
+              </button>
+            </div>
           </div>
         </main>
       </div>

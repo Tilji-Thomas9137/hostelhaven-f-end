@@ -61,13 +61,34 @@ const StudentRoomRequest = () => {
 
   const fetchRooms = async () => {
     try {
-      const response = await fetch('http://localhost:3002/api/room-allocation/rooms');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.error('No session found');
+        return;
+      }
+
+      console.log('Fetching available rooms...');
+      const response = await fetch('http://localhost:3002/api/rooms/available', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('Rooms response status:', response.status);
+      
       if (response.ok) {
         const result = await response.json();
-        setRooms(result.data.rooms || []);
+        console.log('Rooms data:', result);
+        setRooms(result.data?.rooms || []);
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to fetch rooms:', response.status, errorText);
+        showNotification('Failed to load available rooms', 'error');
       }
     } catch (error) {
       console.error('Error fetching rooms:', error);
+      showNotification('Network error while loading rooms', 'error');
     }
   };
 
@@ -77,7 +98,7 @@ const StudentRoomRequest = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:3002/api/room-allocation/request', {
+      const response = await fetch('http://localhost:3002/api/rooms/requests', {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -86,15 +107,17 @@ const StudentRoomRequest = () => {
 
       if (response.ok) {
         const result = await response.json();
-        const request = result.data.request;
-        console.log('Fetched request:', request);
-        // Explicitly set to null if no request exists, is deleted, or is cancelled
-        if (!request || request.status === 'cancelled') {
-          console.log('Setting myRequest to null (no request or cancelled)');
-          setMyRequest(null);
+        const requests = result.data.requests || [];
+        // Get the most recent pending request
+        const pendingRequest = requests.find(req => req.status === 'pending');
+        console.log('Fetched requests:', requests);
+        
+        if (pendingRequest) {
+          console.log('Setting myRequest to:', pendingRequest);
+          setMyRequest(pendingRequest);
         } else {
-          console.log('Setting myRequest to:', request);
-          setMyRequest(request);
+          console.log('No pending request found, setting to null');
+          setMyRequest(null);
         }
       } else if (response.status === 404) {
         // If no request found, set to null
@@ -142,17 +165,19 @@ const StudentRoomRequest = () => {
         return;
       }
 
-      // Create a simple request with the specific room details
+      // Create a room request for the specific room with payment information
       const requestData = {
+        room_id: room.id,
+        special_requirements: `REQUESTED_ROOM_ID:${room.id}`,
+        notes: `Requesting Room ${room.room_number} specifically. Monthly rent: ₹${room.price}/month. Annual payment: ₹${room.price * 12}`,
         preferred_room_type: room.room_type,
-        preferred_floor: room.floor,
-        special_requirements: `Requesting Room ${room.room_number} specifically`
+        preferred_floor: room.floor
       };
 
       console.log('Requesting room:', room);
       console.log('Request data:', requestData);
 
-      const response = await fetch('http://localhost:3002/api/room-allocation/request', {
+      const response = await fetch('http://localhost:3002/api/rooms/request', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -163,7 +188,7 @@ const StudentRoomRequest = () => {
 
       if (response.ok) {
         await fetchMyRequest();
-        showNotification(`Room request for Room ${room.room_number} submitted successfully! We will review your request and notify you of the status.`, 'success', 4000);
+        showNotification(`Room request for Room ${room.room_number} submitted successfully! Monthly rent: ₹${room.price}/month. You will be notified once approved and payment details will be sent to you and your parents.`, 'success', 6000);
       } else {
         let errorMessage = 'Request submission failed';
         try {
@@ -289,7 +314,10 @@ const StudentRoomRequest = () => {
             <div>
               <h3 className="text-lg font-semibold text-slate-800">Available Rooms</h3>
               <p className="text-2xl font-bold text-slate-900">
-                {rooms.filter(room => room.is_available).length}
+                {rooms.filter(room => {
+                  const actualOccupancy = Math.max(room.current_occupancy || 0, room.occupied || 0);
+                  return actualOccupancy < room.capacity && room.status !== 'full' && room.status !== 'maintenance';
+                }).length}
               </p>
               <p className="text-sm text-slate-600">Out of {rooms.length} total</p>
             </div>
@@ -425,7 +453,8 @@ const StudentRoomRequest = () => {
               String(room.room_number).toLowerCase().includes(roomSearch.toLowerCase()) ||
               String(room.floor).toLowerCase().includes(roomSearch.toLowerCase());
             const matchesType = roomTypeFilter === '' || room.room_type === roomTypeFilter;
-            const isAvailable = room.is_available;
+            const actualOccupancy = Math.max(room.current_occupancy || 0, room.occupied || 0);
+            const isAvailable = actualOccupancy < room.capacity && room.status !== 'full' && room.status !== 'maintenance';
             return matchesSearch && matchesType && isAvailable;
           });
 
@@ -470,9 +499,15 @@ const StudentRoomRequest = () => {
                 </div>
               </div>
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                room.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                (() => {
+                  const actualOccupancy = Math.max(room.current_occupancy || 0, room.occupied || 0);
+                  return actualOccupancy < room.capacity && room.status !== 'full' && room.status !== 'maintenance';
+                })() ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
               }`}>
-                {room.is_available ? 'Available' : 'Occupied'}
+                {(() => {
+                  const actualOccupancy = Math.max(room.current_occupancy || 0, room.occupied || 0);
+                  return actualOccupancy < room.capacity && room.status !== 'full' && room.status !== 'maintenance' ? 'Available' : 'Full';
+                })()}
               </span>
             </div>
             
@@ -487,7 +522,7 @@ const StudentRoomRequest = () => {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-600">Occupied:</span>
-                <span className="font-medium">{room.occupied || 0}</span>
+                <span className="font-medium">{Math.max(room.current_occupancy || 0, room.occupied || 0)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-600">Price:</span>
@@ -509,7 +544,10 @@ const StudentRoomRequest = () => {
             )}
             
             <div className="mt-4 pt-4 border-t border-slate-200">
-              {room.is_available && !myRequest ? (
+              {(() => {
+                const actualOccupancy = Math.max(room.current_occupancy || 0, room.occupied || 0);
+                return actualOccupancy < room.capacity && room.status !== 'full' && room.status !== 'maintenance';
+              })() && !myRequest ? (
                 <button
                   onClick={() => handleRequestRoom(room)}
                   disabled={isSubmitting}

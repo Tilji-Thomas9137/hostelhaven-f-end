@@ -430,7 +430,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
     }
   };
 
-  const InputField = ({ name, label, type = 'text', placeholder, icon: Icon, required = false, onChange, ...props }) => {
+  const InputField = ({ name, label, type = 'text', placeholder, icon: Icon, required = false, onChange, disabled=false, ...props }) => {
     const status = getFieldStatus(name);
     const fieldIcon = getFieldIcon(name);
     
@@ -446,12 +446,13 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
             {...register(name)}
             type={type}
             placeholder={placeholder}
+            disabled={disabled}
             className={`w-full px-4 py-4 border-2 rounded-2xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 text-lg ${
               status === 'error' 
                 ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
                 : status === 'success'
                 ? 'border-green-300 focus:border-green-500 focus:ring-green-500 bg-green-50'
-                : 'border-slate-300 focus:border-amber-500 focus:ring-amber-500 bg-white hover:border-amber-400'
+                : `border-slate-300 focus:border-amber-500 focus:ring-amber-500 ${disabled ? 'bg-slate-100 cursor-not-allowed text-slate-500' : 'bg-white hover:border-amber-400'}`
             }`}
             {...props}
           />
@@ -587,6 +588,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 placeholder="Enter your full name"
                 icon={User}
                 required
+                disabled
               />
               
               <InputField
@@ -596,6 +598,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 placeholder="9876543210"
                 icon={Phone}
                 required
+                disabled
                 onChange={(e) => {
                   const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
                   setValue('phone', sanitized, { shouldValidate: true, shouldDirty: true });
@@ -645,6 +648,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
               placeholder="ADM123456"
               icon={Shield}
               required
+              disabled
             />
             
             <InputField
@@ -653,6 +657,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
               placeholder="B.Tech CSE"
               icon={GraduationCap}
               required
+              disabled
             />
             
             <InputField
@@ -662,6 +667,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
               placeholder="2025"
               icon={Calendar}
               required
+              disabled
               onChange={(e) => {
                 const sanitized = e.target.value.replace(/\D/g, '').slice(0, 4);
                 setValue('batch_year', sanitized, { shouldValidate: true, shouldDirty: true });
@@ -686,7 +692,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="space-y-3">
-              <InputField
+            <InputField
                 name="date_of_birth"
                 label="Date of Birth"
                 type="date"
@@ -878,6 +884,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
               label="Address"
               placeholder="Street, Area, Landmark"
               icon={MapPin}
+              disabled
             />
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -892,6 +899,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                     type="text"
                     placeholder="123456"
                     maxLength={6}
+                    disabled
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 ${
                       getFieldStatus('pincode') === 'error' 
                         ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
@@ -937,6 +945,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                     {...register('country')}
                     type="text"
                     placeholder="Enter country"
+                    disabled
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-opacity-20 ${
                       getFieldStatus('country') === 'error' 
                         ? 'border-red-300 focus:border-red-500 focus:ring-red-500 bg-red-50' 
@@ -966,6 +975,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 label="City"
                 placeholder="Enter city"
                 icon={MapPin}
+                disabled
               />
               
               <InputField
@@ -973,6 +983,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 label="State"
                 placeholder="Enter state"
                 icon={MapPin}
+                disabled
               />
             </div>
           </div>
@@ -1004,6 +1015,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 label="Contact Name"
                 placeholder="Emergency contact name"
                 icon={User}
+                disabled
               />
               
               <InputField
@@ -1012,6 +1024,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 type="tel"
                 placeholder="9876543210"
                 icon={Phone}
+                disabled
                 onChange={(e) => {
                   const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
                   setValue('emergency_contact_phone', sanitized, { shouldValidate: true, shouldDirty: true });
@@ -1030,6 +1043,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 label="Parent Name"
                 placeholder="Parent/Guardian name"
                 icon={User}
+                disabled
               />
               
               <InputField
@@ -1038,6 +1052,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 type="tel"
                 placeholder="9876543210"
                 icon={Phone}
+                disabled
                 onChange={(e) => {
                   const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
                   setValue('parent_phone', sanitized, { shouldValidate: true, shouldDirty: true });
@@ -1050,6 +1065,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
                 type="email"
                 placeholder="parent@example.com"
                 icon={Mail}
+                disabled
               />
             </div>
           </div>

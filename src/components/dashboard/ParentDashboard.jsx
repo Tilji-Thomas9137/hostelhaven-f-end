@@ -32,6 +32,7 @@ import {
   Eye,
   Trash2
 } from 'lucide-react';
+import ChatWidget from '../ui/ChatWidget';
 
 const ParentDashboard = () => {
   const navigate = useNavigate();
@@ -40,9 +41,19 @@ const ParentDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [childInfo, setChildInfo] = useState(null);
   const [payments, setPayments] = useState([]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({
+    payment_method: 'online',
+    transaction_reference: ''
+  });
+  const [showPaymentDuePopup, setShowPaymentDuePopup] = useState(false);
+  const [dueNotification, setDueNotification] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [academicPerformance, setAcademicPerformance] = useState(null);
   const [healthStatus, setHealthStatus] = useState(null);
   const [communications, setCommunications] = useState([]);
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -64,7 +75,8 @@ const ParentDashboard = () => {
         if (response.ok) {
           const result = await response.json();
           setUser(result.data.user);
-          fetchMockData();
+          fetchChildData();
+          fetchNotifications();
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -76,68 +88,242 @@ const ParentDashboard = () => {
     fetchUserData();
   }, [navigate]);
 
-  const fetchMockData = () => {
-    // Mock child information
-    setChildInfo({
-      name: 'Sarah Johnson',
-      age: 19,
-      room: '205',
-      hostel: 'University Heights Hostel',
-      floor: 2,
-      checkInDate: '2024-01-15',
-      academicYear: '2nd Year',
-      course: 'Computer Science'
-    });
+  // Fetch unread payment_due notification on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const res = await fetch('http://localhost:3002/api/notifications?type=payment_due&is_read=false&limit=1', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        const json = await res.json();
+        if (res.ok && json.success && json.data.notifications.length > 0) {
+          setDueNotification(json.data.notifications[0]);
+          setShowPaymentDuePopup(true);
+        }
+      } catch (_) {}
+    })();
+  }, []);
 
-    // Mock payments data
-    setPayments([
-      { id: 1, month: 'January 2024', amount: 1200, status: 'paid', dueDate: '2024-01-15', paidDate: '2024-01-10' },
-      { id: 2, month: 'February 2024', amount: 1200, status: 'paid', dueDate: '2024-02-15', paidDate: '2024-02-12' },
-      { id: 3, month: 'March 2024', amount: 1200, status: 'pending', dueDate: '2024-03-15', paidDate: null }
-    ]);
+  const parsePaymentFromNotification = (n) => {
+    if (!n) return {};
+    const msg = n.message || '';
+    const m = msg.match(/₹([\d.]+).*for\s(.+?)\s\(ID:.*\)\sby\s(.+)$/i);
+    const amount = m ? parseFloat(m[1]) : 0;
+    const typeText = m ? m[2] : '';
+    const mapType = (t) => {
+      const key = t.toLowerCase().replace(/\s+/g, '_');
+      return ['room_rent','mess_fees','security_deposit','other'].includes(key) ? key : 'other';
+    };
+    return { amount, payment_type: mapType(typeText) };
+  };
 
-    // Mock academic performance
-    setAcademicPerformance({
-      currentSemester: 'Spring 2024',
-      gpa: 3.8,
-      attendance: 95,
-      subjects: [
-        { name: 'Data Structures', grade: 'A', attendance: 98 },
-        { name: 'Database Systems', grade: 'A-', attendance: 92 },
-        { name: 'Web Development', grade: 'A', attendance: 100 },
-        { name: 'Mathematics', grade: 'B+', attendance: 88 }
-      ]
-    });
-
-    // Mock health status
-    setHealthStatus({
-      overallHealth: 'Excellent',
-      lastCheckup: '2024-01-20',
-      vaccinations: 'Up to date',
-      allergies: 'None',
-      emergencyContact: '+1-555-0123',
-      medicalNotes: 'No medical issues reported'
-    });
-
-    // Mock communications
-    setCommunications([
-      {
-        id: 1,
-        type: 'email',
-        subject: 'Monthly Progress Report',
-        date: '2024-02-15',
-        status: 'read',
-        content: 'Your child is performing well academically...'
-      },
-      {
-        id: 2,
-        type: 'notification',
-        subject: 'Payment Reminder',
-        date: '2024-02-10',
-        status: 'unread',
-        content: 'March payment is due on 15th...'
+  const handleDueProceed = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && dueNotification) {
+        await fetch(`http://localhost:3002/api/notifications/${dueNotification.id}/read`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
       }
-    ]);
+    } catch (_) {}
+    setShowPaymentDuePopup(false);
+  };
+
+  const openPayFromDue = async (method) => {
+    const info = parsePaymentFromNotification(dueNotification);
+    setSelectedPayment({ amount: info.amount, payment_type: info.payment_type });
+    setPaymentForm(prev => ({ ...prev, payment_method: method }));
+    setShowPaymentDuePopup(false);
+    setShowPaymentModal(true);
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data: notifications, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        console.error('Error fetching notifications:', error);
+        setNotifications([]);
+      } else {
+        setNotifications(notifications || []);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      setNotifications([]);
+    }
+  };
+
+  const fetchChildData = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.error('No session found');
+        return;
+      }
+
+      const response = await fetch('http://localhost:3002/api/parents/child-info', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const childData = result.data.child;
+
+        // Helpers for clean display
+        const ordinal = (n) => {
+          const s = ["th","st","nd","rd"], v = n % 100;
+          return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        };
+        const calcAge = (dob) => {
+          if (!dob) return 'N/A';
+          const d = new Date(dob);
+          if (Number.isNaN(d.getTime())) return 'N/A';
+          const today = new Date();
+          let age = today.getFullYear() - d.getFullYear();
+          const m = today.getMonth() - d.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+          return String(age);
+        };
+        const calcYear = (batchYear) => {
+          if (!batchYear) return 'N/A';
+          const yearNum = Math.max(1, (new Date().getFullYear() - Number(batchYear)) + 1);
+          return `${ordinal(yearNum)} Year`;
+        };
+        
+        // Set real child information (single-hostel defaults)
+        setChildInfo({
+          name: childData.profile.users.full_name,
+          age: calcAge(childData.profile.date_of_birth),
+          room: childData.profile.room_number || 'Not Assigned',
+          hostel: 'HostelHaven',
+          floor: childData.profile.floor || 'N/A',
+          checkInDate: childData.profile.check_in_date || childData.profile.join_date || 'N/A',
+          academicYear: childData.profile.academic_year || 'N/A',
+          course: childData.profile.course || 'N/A',
+          admissionNumber: childData.profile.admission_number,
+          email: childData.profile.users.email,
+          phone: childData.profile.users.phone || childData.profile.parent_phone || 'N/A'
+        });
+
+        // Set real payments data
+        const formattedPayments = childData.payments.map((payment, index) => ({
+          id: payment.id,
+          month: new Date(payment.due_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+          amount: payment.amount,
+          status: payment.status,
+          dueDate: payment.due_date,
+          paidDate: payment.paid_date
+        }));
+        setPayments(formattedPayments);
+
+        // Set academic performance (using profile data)
+        setAcademicPerformance({
+          currentSemester: childData.profile.academic_year || (childData.profile.batch_year ? `${new Date().getFullYear() - childData.profile.batch_year + 1}st Year` : 'Current Semester'),
+          gpa: childData.profile.gpa || 'N/A',
+          attendance: childData.profile.attendance_percentage || 'N/A',
+          subjects: [
+            { name: 'Overall Performance', grade: childData.profile.gpa || 'N/A', attendance: childData.profile.attendance_percentage || 'N/A' }
+          ]
+        });
+
+        // Set health status (using profile data)
+        setHealthStatus({
+          overallHealth: childData.profile.medical_status || 'Good',
+          lastCheckup: childData.profile.last_medical_checkup || 'N/A',
+          vaccinations: childData.profile.vaccination_status || 'Up to date',
+          allergies: childData.profile.allergies || 'None',
+          emergencyContact: childData.profile.emergency_contact || childData.profile.parent_phone || 'N/A',
+          medicalNotes: childData.profile.medical_notes || 'No medical issues reported'
+        });
+
+        // Set communications (using complaints and leave requests)
+        const communications = [];
+        
+        // Add complaints as communications
+        childData.complaints.forEach((complaint, index) => {
+          communications.push({
+            id: `complaint-${complaint.id}`,
+            type: 'notification',
+            subject: `Complaint: ${complaint.title}`,
+            date: new Date(complaint.created_at).toLocaleDateString(),
+            status: complaint.status === 'resolved' ? 'read' : 'unread',
+            content: complaint.description
+          });
+        });
+
+        // Add leave requests as communications
+        childData.leaveRequests.forEach((request, index) => {
+          communications.push({
+            id: `leave-${request.id}`,
+            type: 'notification',
+            subject: `Leave Request: ${request.reason}`,
+            date: new Date(request.created_at).toLocaleDateString(),
+            status: request.status === 'approved' ? 'read' : 'unread',
+            content: `Leave from ${request.start_date} to ${request.end_date} - ${request.destination}`
+          });
+        });
+
+        setCommunications(communications);
+
+      } else {
+        console.error('Failed to fetch child data:', response.statusText);
+        // Fallback to mock data if API fails
+        fetchMockData();
+      }
+    } catch (error) {
+      console.error('Error fetching child data:', error);
+      // Fallback to mock data if API fails
+      fetchMockData();
+    }
+  };
+
+  const fetchMockData = () => {
+    // Fallback mock data
+    setChildInfo({
+      name: 'No Child Data Available',
+      age: 'N/A',
+      room: 'N/A',
+      hostel: 'N/A',
+      floor: 'N/A',
+      checkInDate: 'N/A',
+      academicYear: 'N/A',
+      course: 'N/A'
+    });
+
+    setPayments([]);
+    setAcademicPerformance({
+      currentSemester: 'N/A',
+      gpa: 'N/A',
+      attendance: 'N/A',
+      subjects: []
+    });
+
+    setHealthStatus({
+      overallHealth: 'N/A',
+      lastCheckup: 'N/A',
+      vaccinations: 'N/A',
+      allergies: 'N/A',
+      emergencyContact: 'N/A',
+      medicalNotes: 'No data available'
+    });
+
+    setCommunications([]);
   };
 
   const handleLogout = async () => {
@@ -197,6 +383,10 @@ const ParentDashboard = () => {
               <p className="text-lg font-semibold text-slate-800">{childInfo?.name}</p>
             </div>
             <div>
+              <label className="text-sm font-medium text-slate-600">Admission Number</label>
+              <p className="text-lg font-semibold text-slate-800">{childInfo?.admissionNumber || 'N/A'}</p>
+            </div>
+            <div>
               <label className="text-sm font-medium text-slate-600">Age</label>
               <p className="text-lg font-semibold text-slate-800">{childInfo?.age} years</p>
             </div>
@@ -208,6 +398,10 @@ const ParentDashboard = () => {
               <label className="text-sm font-medium text-slate-600">Course</label>
               <p className="text-lg font-semibold text-slate-800">{childInfo?.course}</p>
             </div>
+            <div>
+              <label className="text-sm font-medium text-slate-600">Email</label>
+              <p className="text-lg font-semibold text-slate-800">{childInfo?.email || 'N/A'}</p>
+            </div>
           </div>
           
           <div className="space-y-4">
@@ -215,10 +409,7 @@ const ParentDashboard = () => {
               <label className="text-sm font-medium text-slate-600">Room</label>
               <p className="text-lg font-semibold text-slate-800">{childInfo?.room}</p>
             </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Hostel</label>
-              <p className="text-lg font-semibold text-slate-800">{childInfo?.hostel}</p>
-            </div>
+            {/* Hostel hidden for single-hostel platform */}
             <div>
               <label className="text-sm font-medium text-slate-600">Check-in Date</label>
               <p className="text-lg font-semibold text-slate-800">{childInfo?.checkInDate}</p>
@@ -227,9 +418,50 @@ const ParentDashboard = () => {
               <label className="text-sm font-medium text-slate-600">Floor</label>
               <p className="text-lg font-semibold text-slate-800">{childInfo?.floor}</p>
             </div>
+            <div>
+              <label className="text-sm font-medium text-slate-600">Phone</label>
+              <p className="text-lg font-semibold text-slate-800">{childInfo?.phone || 'N/A'}</p>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Notifications */}
+      {notifications.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-slate-800">Recent Notifications</h2>
+            <div className="text-sm text-slate-500">{notifications.length} unread</div>
+          </div>
+          
+          <div className="space-y-4">
+            {notifications.slice(0, 5).map((notification) => (
+              <div key={notification.id} className={`flex items-start space-x-4 p-4 rounded-xl transition-colors ${
+                notification.type === 'room_allocation' ? 'bg-green-50 hover:bg-green-100' :
+                notification.type === 'payment_due' ? 'bg-yellow-50 hover:bg-yellow-100' :
+                'bg-blue-50 hover:bg-blue-100'
+              }`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  notification.type === 'room_allocation' ? 'bg-green-100 text-green-600' :
+                  notification.type === 'payment_due' ? 'bg-yellow-100 text-yellow-600' :
+                  'bg-blue-100 text-blue-600'
+                }`}>
+                  {notification.type === 'room_allocation' ? <Home className="w-5 h-5" /> :
+                   notification.type === 'payment_due' ? <CreditCard className="w-5 h-5" /> :
+                   <Bell className="w-5 h-5" />}
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-slate-800">{notification.title}</p>
+                  <p className="text-sm text-slate-600">{notification.message}</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {new Date(notification.created_at).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -358,54 +590,149 @@ const ParentDashboard = () => {
     </div>
   );
 
-  const renderPayments = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800">Payment History</h2>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-          <Download className="w-4 h-4" />
-          <span>Export</span>
-        </button>
-      </div>
-      
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Month</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Due Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Paid Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {payments.map((payment) => (
-                <tr key={payment.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{payment.month}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">${payment.amount}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{payment.dueDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      payment.status === 'paid' 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {payment.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                    {payment.paidDate || '-'}
-                  </td>
+  const renderPayments = () => {
+    const pendingPayments = payments.filter(p => p.status === 'pending');
+    const paidPayments = payments.filter(p => p.status === 'paid');
+    const overduePayments = payments.filter(p => p.status === 'overdue');
+
+    return (
+      <div className="space-y-6">
+        {/* Payment Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Pending Payments</p>
+                <p className="text-2xl font-bold text-amber-600">{pendingPayments.length}</p>
+              </div>
+              <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+                <Clock className="w-6 h-6 text-amber-600" />
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-2xl shadow-lg border border-green-100 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Paid Payments</p>
+                <p className="text-2xl font-bold text-green-600">{paidPayments.length}</p>
+              </div>
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-2xl shadow-lg border border-red-100 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Overdue</p>
+                <p className="text-2xl font-bold text-red-600">{overduePayments.length}</p>
+              </div>
+              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment List */}
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
+          <div className="p-6 border-b border-amber-100">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-800">Payment History</h2>
+              <button 
+                onClick={exportPaymentsCSV} 
+                className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export</span>
+              </button>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Payment Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Amount</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Due Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Paid By</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {payments.map((payment) => (
+                  <tr key={payment.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-slate-900 capitalize">
+                        {payment.payment_type?.replace('_', ' ') || payment.month || 'Unknown'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                      ₹{payment.amount?.toLocaleString() || '0'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                      {payment.due_date ? new Date(payment.due_date).toLocaleDateString() : payment.dueDate || '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        payment.status === 'paid' 
+                          ? 'bg-green-100 text-green-800' 
+                          : payment.status === 'overdue'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {payment.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                      {payment.paid_by_role ? (
+                        <div>
+                          <div className="font-medium capitalize">{payment.paid_by_role}</div>
+                          {payment.paid_at && (
+                            <div className="text-xs text-slate-500">
+                              {new Date(payment.paid_at).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      ) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {payment.status === 'pending' && (
+                        <button
+                          onClick={() => handlePayNow(payment)}
+                          className="text-amber-600 hover:text-amber-700 font-medium"
+                        >
+                          Pay Now
+                        </button>
+                      )}
+                      {payment.status === 'paid' && (
+                        <div className="flex items-center space-x-1 text-green-600">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-xs">Paid</span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {payments.length === 0 && (
+            <div className="text-center py-12">
+              <CreditCard className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-800 mb-2">No Payments Found</h3>
+              <p className="text-slate-600">No payment records found for your child.</p>
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderHealth = () => (
     <div className="space-y-6">
@@ -488,6 +815,85 @@ const ParentDashboard = () => {
     </div>
   );
 
+  const exportPaymentsCSV = () => {
+    if (!payments || payments.length === 0) {
+      alert('No payments to export');
+      return;
+    }
+    const headers = ['Payment Type', 'Amount', 'Due Date', 'Status', 'Paid By', 'Paid Date', 'Transaction Reference'];
+    const rows = payments.map(p => [
+      `"${p.payment_type?.replace('_', ' ') || p.month || 'Unknown'}"`,
+      p.amount || 0,
+      `"${p.due_date ? new Date(p.due_date).toLocaleDateString() : p.dueDate || ''}"`,
+      `"${p.status || 'pending'}"`,
+      `"${p.paid_by_role || ''}"`,
+      `"${p.paid_at ? new Date(p.paid_at).toLocaleDateString() : p.paidDate || ''}"`,
+      `"${p.transaction_reference || ''}"`
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'child_payments.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePayNow = (payment) => {
+    setSelectedPayment(payment);
+    setPaymentForm({
+      payment_method: 'online',
+      transaction_reference: ''
+    });
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSubmit = async () => {
+    if (!selectedPayment || !paymentForm.payment_method) return;
+    
+    setIsSubmitting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Not authenticated');
+        return;
+      }
+
+      const response = await fetch(`http://localhost:3002/api/payments/${selectedPayment.id}/pay`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          payment_method: paymentForm.payment_method,
+          transaction_reference: paymentForm.transaction_reference,
+          paid_by_role: 'parent'
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Payment failed');
+      }
+
+      alert('Payment marked as paid successfully!');
+      setShowPaymentModal(false);
+      setSelectedPayment(null);
+      // Refresh payments by refetching child data
+      fetchChildData();
+    } catch (error) {
+      console.error('Payment error:', error);
+      alert(error.message || 'Failed to process payment');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
@@ -528,10 +934,10 @@ const ParentDashboard = () => {
             <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-orange-600 rounded-full flex items-center justify-center">
               <Heart className="w-6 h-6 text-white" />
             </div>
-            <div>
-              <p className="font-medium text-slate-900">{user.fullName}</p>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-slate-900 truncate">{user?.fullName || 'Parent'}</p>
               <p className="text-sm text-slate-500">Parent</p>
-              <p className="text-xs text-slate-400">{user.email}</p>
+              <p className="text-xs text-slate-400 break-all">{user?.email || ''}</p>
             </div>
           </div>
         </div>
@@ -587,11 +993,134 @@ const ParentDashboard = () => {
 
         {/* Content Area */}
         <main className="p-6">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto relative">
             {renderContent()}
+            <ChatWidget currentUser={user} channels={[{ id: 'admin-parent', label: 'Admin' }]} />
           </div>
         </main>
       </div>
+
+      {/* Payment Modal */}
+      {showPaymentModal && selectedPayment && (
+        <div 
+          className="fixed inset-0 flex items-start justify-center z-50 pt-8"
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowPaymentModal(false); setSelectedPayment(null); } }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 border border-slate-200">
+            <div className="p-6 border-b border-amber-100">
+              <h3 className="text-xl font-semibold text-slate-800">Make Payment for Child</h3>
+              <p className="text-slate-600 mt-1">Complete payment for your child's hostel fees</p>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Payment Details */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-slate-600">Payment Type:</span>
+                  <span className="text-sm text-slate-900 capitalize">
+                    {selectedPayment.payment_type?.replace('_', ' ') || selectedPayment.month || 'Unknown'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-slate-600">Amount:</span>
+                  <span className="text-lg font-bold text-slate-900">
+                    ₹{selectedPayment.amount?.toLocaleString() || '0'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-slate-600">Due Date:</span>
+                  <span className="text-sm text-slate-900">
+                    {selectedPayment.due_date ? new Date(selectedPayment.due_date).toLocaleDateString() : selectedPayment.dueDate || 'Not set'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Payment Form */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Payment Method
+                  </label>
+                  <select
+                    value={paymentForm.payment_method}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, payment_method: e.target.value }))}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  >
+                    <option value="online">Online Payment</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cash">Cash</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Transaction Reference (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentForm.transaction_reference}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, transaction_reference: e.target.value }))}
+                    placeholder="Enter transaction ID or reference number"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Important Note */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800 mb-1">Important Note</p>
+                    <p className="text-sm text-amber-700">
+                      This will mark the payment as paid by parent. Please ensure you have actually completed the payment before confirming.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-amber-100 flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  setSelectedPayment(null);
+                }}
+                className="flex-1 px-4 py-3 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePaymentSubmit}
+                disabled={isSubmitting || !paymentForm.payment_method}
+                className="flex-1 px-4 py-3 bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isSubmitting ? 'Processing...' : 'Confirm Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPaymentDuePopup && dueNotification && (
+        <div className="fixed inset-0 flex items-start justify-center z-50 pt-6" onClick={(e)=>{ if(e.target===e.currentTarget) setShowPaymentDuePopup(false); }}>
+          <div className="bg-white rounded-2xl shadow-2xl border border-amber-200 max-w-lg w-full mx-4">
+            <div className="p-5 border-b border-amber-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800">Child Payment Due</h3>
+              <button className="text-slate-400 hover:text-slate-600" onClick={()=>setShowPaymentDuePopup(false)}><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5">
+              <p className="text-slate-700">{dueNotification.message}</p>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button onClick={()=>openPayFromDue('online')} className="px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700">Pay Online</button>
+                <button onClick={()=>openPayFromDue('cash')} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50">Pay Offline</button>
+                <button onClick={handleDueProceed} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50">Proceed</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

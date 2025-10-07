@@ -21,6 +21,7 @@ import {
   Activity,
   CheckCircle
 } from 'lucide-react';
+import ChatWidget from '../ui/ChatWidget';
 
 const WardenDashboard = () => {
   const navigate = useNavigate();
@@ -73,7 +74,10 @@ const WardenDashboard = () => {
       console.error('Logout error:', error);
     } finally {
       setUser(null);
-      navigate('/');
+      // Use setTimeout to avoid setState during render warning
+      setTimeout(() => {
+        navigate('/login');
+      }, 0);
     }
   };
 
@@ -128,6 +132,7 @@ const WardenDashboard = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
+    { id: 'room-requests', label: 'Room Requests', icon: Building2 },
     { id: 'disciplinary', label: 'Disciplinary', icon: Gavel },
     { id: 'welfare', label: 'Student Welfare', icon: Heart },
     { id: 'inspections', label: 'Room Inspections', icon: UserCheck },
@@ -426,10 +431,30 @@ const WardenDashboard = () => {
     </div>
   );
 
+  const renderRoomRequests = () => (
+    <div className="space-y-8">
+      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+        <h2 className="text-xl font-semibold text-slate-800 mb-6">Pending Room Requests</h2>
+        <div className="text-center py-12">
+          <Building2 className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-slate-800 mb-2">Room Request Management</h3>
+          <p className="text-slate-600 mb-4">
+            Manage student room allocation requests. Approve or reject requests based on availability and student needs.
+          </p>
+          <button className="px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors">
+            View Pending Requests
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
         return renderOverview();
+      case 'room-requests':
+        return renderRoomRequests();
       case 'disciplinary':
         return renderDisciplinary();
       case 'welfare':
@@ -529,8 +554,9 @@ const WardenDashboard = () => {
 
         {/* Content Area */}
         <main className="p-6">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto relative">
             {renderContent()}
+            <ChatWidget currentUser={user} channels={[{ id: 'ops-warden', label: 'Operations' }, { id: 'warden-admin', label: 'Admin' }]} />
           </div>
         </main>
       </div>

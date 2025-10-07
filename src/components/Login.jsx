@@ -44,47 +44,84 @@ const Login = () => {
     setError('');
 
     try {
-      // First check if the user exists and email is confirmed
-      const { data: authData, error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
+      // Use our backend API for authentication
+      const response = await fetch('http://localhost:3002/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: data.email, // This will be the username
+          password: data.password,
+        }),
       });
 
-      if (error) {
-        // Handle specific error cases
-        if (error.message.includes('Email not confirmed')) {
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (result.message?.includes('Email not confirmed')) {
           setError('Please check your email and click the confirmation link before logging in.');
           setShowResendConfirmation(true);
-        } else if (error.message.includes('Invalid login credentials')) {
-          setError('Invalid email or password. Please try again.');
+        } else if (result.message?.includes('Invalid login credentials') || result.message?.includes('Invalid email or password')) {
+          setError('Invalid username or password. Please try again.');
           setShowResendConfirmation(false);
-        } else if (error.message.includes('rate limit')) {
+        } else if (result.message?.includes('rate limit')) {
           setError('Too many login attempts. Please try again later.');
           setShowResendConfirmation(false);
-        } else if (error.message.includes('Session has expired') || error.message.includes('session expired')) {
+        } else if (result.message?.includes('Session has expired') || result.message?.includes('session expired')) {
           setError('Your session has expired. Please log in again.');
           setShowResendConfirmation(false);
-        } else if (error.message.includes('JWT expired') || error.message.includes('expired')) {
+        } else if (result.message?.includes('JWT expired') || result.message?.includes('expired')) {
           setError('Your session has expired. Please log in again.');
           setShowResendConfirmation(false);
-        } else if (error.message.includes('Invalid JWT') || error.message.includes('invalid token')) {
+        } else if (result.message?.includes('Invalid JWT') || result.message?.includes('invalid token')) {
           setError('Invalid authentication token. Please log in again.');
           setShowResendConfirmation(false);
+        } else if (result.message?.includes('not yet activated')) {
+          setError(result.message);
+          setShowResendConfirmation(false);
         } else {
-          console.error('Login error:', error);
-          setError(error.message || 'An error occurred during login. Please try again.');
+          console.error('Login error:', result);
+          setError(result.message || 'An error occurred during login. Please try again.');
           setShowResendConfirmation(false);
         }
         return;
       }
 
-      if (!authData?.user) {
+      if (!result.success || !result.data?.user) {
         setError('No user data received. Please try again.');
         return;
       }
 
-      // Use role-based redirection with proper error handling
-      await redirectToRoleBasedDashboard(authData, navigate);
+      // Store the session data and navigate to appropriate dashboard
+      const user = result.data.user;
+      
+      // Set Supabase session for compatibility
+      await supabase.auth.setSession({
+        access_token: result.data.session.accessToken,
+        refresh_token: result.data.session.refreshToken,
+      });
+
+      // Navigate based on user role
+      switch (user.role) {
+        case 'admin':
+          navigate('/admin-dashboard');
+          break;
+        case 'warden':
+          navigate('/warden-dashboard');
+          break;
+        case 'hostel_operations_assistant':
+          navigate('/operations-dashboard');
+          break;
+        case 'student':
+          navigate('/student-dashboard');
+          break;
+        case 'parent':
+          navigate('/parent-dashboard');
+          break;
+        default:
+          navigate('/dashboard');
+      }
     } catch (error) {
       console.error('Unexpected login error:', error);
       setError('An unexpected error occurred. Please try again.');
@@ -184,26 +221,29 @@ const Login = () => {
           {/* Login Form */}
           <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-8">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              {/* Email Field */}
+              {/* Username Field */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
-                  Email Address
+                  Username
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
                   <input
-                    type="email"
+                    type="text"
                     id="email"
                     {...register('email')}
                     className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${
                       errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300'
                     }`}
-                    placeholder="Enter your email"
+                    placeholder="Enter your username (e.g., ADM2026001, PARENT-ADM2026001, EMP001)"
                   />
                 </div>
                 {errors.email && (
                   <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
                 )}
+                <p className="mt-1 text-xs text-slate-500">
+                  Students: Admission Number | Parents: PARENT-Admission Number | Staff: Employee ID
+                </p>
               </div>
 
               {/* Password Field */}
