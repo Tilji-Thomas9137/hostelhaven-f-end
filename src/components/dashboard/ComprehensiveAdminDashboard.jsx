@@ -78,6 +78,7 @@ const ComprehensiveAdminDashboard = () => {
       console.log('Session available, making API calls...');
 
       // Fetch all dashboard data in parallel with error handling
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
       const [
         studentsResponse,
         roomsResponse,
@@ -86,22 +87,22 @@ const ComprehensiveAdminDashboard = () => {
         staffResponse,
         leaveRequestsResponse
       ] = await Promise.allSettled([
-        fetch('http://localhost:3002/api/admission-registry/students', {
+        fetch(`${API_BASE_URL}/api/admission-registry/students`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         }),
-        fetch('http://localhost:3002/api/room-management/rooms', {
+        fetch(`${API_BASE_URL}/api/room-management/rooms`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         }),
-        fetch('http://localhost:3002/api/payments', {
+        fetch(`${API_BASE_URL}/api/payments`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         }),
-        fetch('http://localhost:3002/api/complaints', {
+        fetch(`${API_BASE_URL}/api/complaints`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         }),
-        fetch('http://localhost:3002/api/staff-management/staff', {
+        fetch(`${API_BASE_URL}/api/staff-management/staff`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         }),
-        fetch('http://localhost:3002/api/leave-requests', {
+        fetch(`${API_BASE_URL}/api/leave-requests`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         })
       ]);

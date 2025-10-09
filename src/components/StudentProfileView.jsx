@@ -18,6 +18,9 @@ import {
 const StudentProfileView = ({ studentProfile, user }) => {
   const [isLoading, setIsLoading] = useState(false);
 
+  // Normalize nested user object from backend (can be `users` or `user`)
+  const profileUser = studentProfile?.users || studentProfile?.user || null;
+
   if (!studentProfile) {
     return (
       <div className="space-y-6">
@@ -98,7 +101,7 @@ const StudentProfileView = ({ studentProfile, user }) => {
               </div>
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-slate-800">{studentProfile?.users?.full_name || user?.fullName || 'N/A'}</h2>
+              <h2 className="text-2xl font-bold text-slate-800">{profileUser?.full_name || user?.fullName || 'N/A'}</h2>
               <p className="text-slate-600">{studentProfile?.admission_number || 'N/A'}</p>
               <p className="text-sm text-slate-500">{studentProfile?.course || 'N/A'} • Batch {studentProfile?.batch_year || 'N/A'}</p>
             </div>
@@ -124,27 +127,19 @@ const StudentProfileView = ({ studentProfile, user }) => {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-slate-600">Full Name</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.users?.full_name || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{profileUser?.full_name || 'N/A'}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-600">Phone Number</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.users?.phone || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{profileUser?.phone || 'N/A'}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-600">Email Address</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.users?.email || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{profileUser?.email || 'N/A'}</p>
             </div>
           </div>
           
           <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-slate-600">Date of Birth</label>
-              <p className="text-lg font-semibold text-slate-800">{formatDate(studentProfile?.date_of_birth)}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Age</label>
-              <p className="text-lg font-semibold text-slate-800">{getAge(studentProfile?.date_of_birth)}</p>
-            </div>
             <div>
               <label className="text-sm font-medium text-slate-600">Gender</label>
               <p className="text-lg font-semibold text-slate-800">{studentProfile?.gender || 'N/A'}</p>
@@ -173,10 +168,7 @@ const StudentProfileView = ({ studentProfile, user }) => {
             <label className="text-sm font-medium text-slate-600">Batch Year</label>
             <p className="text-lg font-semibold text-slate-800">{studentProfile?.batch_year || 'N/A'}</p>
           </div>
-          <div>
-            <label className="text-sm font-medium text-slate-600">Academic Year</label>
-            <p className="text-lg font-semibold text-slate-800">{getAcademicYear(studentProfile?.batch_year)}</p>
-          </div>
+          {/* Academic Year intentionally removed as per requirements */}
           <div>
             <label className="text-sm font-medium text-slate-600">Blood Group</label>
             <p className="text-lg font-semibold text-slate-800">{studentProfile?.blood_group || 'N/A'}</p>
@@ -196,24 +188,6 @@ const StudentProfileView = ({ studentProfile, user }) => {
             <label className="text-sm font-medium text-slate-600">Address</label>
             <p className="text-lg font-semibold text-slate-800">{studentProfile?.address || 'N/A'}</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="text-sm font-medium text-slate-600">City</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.city || 'N/A'}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">State</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.state || 'N/A'}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Pincode</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.pincode || 'N/A'}</p>
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-slate-600">Country</label>
-            <p className="text-lg font-semibold text-slate-800">{studentProfile?.country || 'N/A'}</p>
-          </div>
         </div>
       </div>
 
@@ -225,21 +199,6 @@ const StudentProfileView = ({ studentProfile, user }) => {
         </h3>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-4">
-            <h4 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-red-500" />
-              Emergency Contact
-            </h4>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Contact Name</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.emergency_contact_name || 'N/A'}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Contact Phone</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.emergency_contact_phone || 'N/A'}</p>
-            </div>
-          </div>
-          
           <div className="space-y-4">
             <h4 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-500" />

@@ -56,6 +56,10 @@ const StudentManagement = ({ data = [], onRefresh }) => {
         admission_number: formData.admission_number,
         course: formData.course,
         year: formData.year,
+        date_of_birth: formData.date_of_birth,
+        gender: formData.gender,
+        address: formData.address,
+        blood_group: formData.blood_group,
         student_email: formData.student_email,
         student_phone: formData.student_phone,
         parent_name: formData.parent_name,
@@ -122,7 +126,13 @@ const StudentManagement = ({ data = [], onRefresh }) => {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          date_of_birth: formData.date_of_birth,
+          gender: formData.gender,
+          address: formData.address,
+          blood_group: formData.blood_group
+        }),
       });
 
       const result = await response.json();
@@ -460,6 +470,67 @@ const StudentManagement = ({ data = [], onRefresh }) => {
                     {errors.year && (
                       <p className="text-red-600 text-sm mt-1">{errors.year.message}</p>
                     )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                      Date of Birth
+                    </label>
+                    <input
+                      type="date"
+                      {...register('date_of_birth')}
+                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                      Gender *
+                    </label>
+                    <select
+                      {...register('gender', { required: 'Gender is required' })}
+                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                    {errors.gender && (
+                      <p className="text-red-600 text-sm mt-1">{errors.gender.message}</p>
+                    )}
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                      Address
+                    </label>
+                    <input
+                      type="text"
+                      {...register('address')}
+                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Street, Area, Landmark"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                      Blood Group
+                    </label>
+                    <select
+                      {...register('blood_group')}
+                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Select blood group</option>
+                      <option value="A+">A+</option>
+                      <option value="A-">A-</option>
+                      <option value="B+">B+</option>
+                      <option value="B-">B-</option>
+                      <option value="AB+">AB+</option>
+                      <option value="AB-">AB-</option>
+                      <option value="O+">O+</option>
+                      <option value="O-">O-</option>
+                    </select>
                   </div>
 
               <div>

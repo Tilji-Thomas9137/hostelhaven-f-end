@@ -98,7 +98,6 @@ const ParentDashboard = () => {
 
     // Mock academic performance
     setAcademicPerformance({
-      currentSemester: 'Spring 2024',
       gpa: 3.8,
       attendance: 95,
       subjects: [
@@ -184,10 +183,6 @@ const ParentDashboard = () => {
       <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-slate-800">Child Information</h2>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors">
-            <Edit className="w-4 h-4" />
-            <span>Update Info</span>
-          </button>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -196,14 +191,8 @@ const ParentDashboard = () => {
               <label className="text-sm font-medium text-slate-600">Name</label>
               <p className="text-lg font-semibold text-slate-800">{childInfo?.name}</p>
             </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Age</label>
-              <p className="text-lg font-semibold text-slate-800">{childInfo?.age} years</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Academic Year</label>
-              <p className="text-lg font-semibold text-slate-800">{childInfo?.academicYear}</p>
-            </div>
+            {/* Age intentionally removed */}
+            {/* Academic Year intentionally removed */}
             <div>
               <label className="text-sm font-medium text-slate-600">Course</label>
               <p className="text-lg font-semibold text-slate-800">{childInfo?.course}</p>
@@ -315,10 +304,7 @@ const ParentDashboard = () => {
             <h3 className="text-lg font-semibold text-slate-800">Attendance</h3>
             <p className="text-3xl font-bold text-green-600">{academicPerformance?.attendance}%</p>
           </div>
-          <div className="text-center p-4 bg-slate-50 rounded-xl">
-            <h3 className="text-lg font-semibold text-slate-800">Semester</h3>
-            <p className="text-xl font-semibold text-slate-800">{academicPerformance?.currentSemester}</p>
-          </div>
+          {/* Semester removed as per requirements */}
         </div>
 
         <h3 className="text-lg font-semibold text-slate-800 mb-4">Subject-wise Performance</h3>

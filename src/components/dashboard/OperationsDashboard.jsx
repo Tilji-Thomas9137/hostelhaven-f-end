@@ -15,7 +15,6 @@ import {
   FileText,
   Eye,
   Edit,
-  // Plus,  // remove add-room in ops
   Search,
   Download,
   Activity,
@@ -51,17 +50,6 @@ const OperationsDashboard = () => {
   const [roomsData, setRoomsData] = useState([]);
   const [roomRequests, setRoomRequests] = useState([]);
   const [roomAllocations, setRoomAllocations] = useState([]);
-  // Ops cannot add rooms; hide modal/state
-  const [showAddRoomModal] = useState(false);
-  const [isSubmittingRoom] = useState(false);
-  const [roomFormData, setRoomFormData] = useState({
-    block: '',
-    room_number: '',
-    floor: '',
-    room_type: '',
-    amenities: []
-  });
-  const [roomFormErrors, setRoomFormErrors] = useState({});
   const [roomFilters, setRoomFilters] = useState({
     status: '',
     room_type: '',
@@ -71,6 +59,13 @@ const OperationsDashboard = () => {
     status: '',
     room_type: ''
   });
+
+  // Modal states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingRoom, setEditingRoom] = useState(null);
+  const [newStatus, setNewStatus] = useState('');
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewingRoom, setViewingRoom] = useState(null);
 
   useEffect(() => {
     if (shouldRedirect.redirect && shouldRedirect.to) {
@@ -117,7 +112,8 @@ const OperationsDashboard = () => {
         // Get additional user data from our backend
         let userResult;
         try {
-          const response = await fetch('http://localhost:3002/api/auth/me', {
+          const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+          const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
               'Content-Type': 'application/json',
@@ -193,11 +189,212 @@ const OperationsDashboard = () => {
     }
   };
 
+  // Room request handlers
+  const handleApproveRequest = async (requestId) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // For now, we'll need to get a room_id. Let's prompt the user or use a default approach
+      const roomId = prompt('Enter Room ID for allocation (or leave empty to approve without specific room):');
+      
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/room-requests/${requestId}/approve`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          room_id: roomId || '00000000-0000-0000-0000-000000000000', // Placeholder UUID
+          notes: 'Approved by operations staff'
+        })
+      });
+
+      if (response.ok) {
+        showNotification('Room request approved successfully', 'success');
+        // Refresh the data
+        fetchRoomsDashboardData();
+      } else {
+        const error = await response.json();
+        showNotification(error.message || 'Failed to approve request', 'error');
+      }
+    } catch (error) {
+      console.error('Error approving request:', error);
+      showNotification('Failed to approve request', 'error');
+    }
+  };
+
+  const handleRejectRequest = async (requestId) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const reason = prompt('Enter reason for rejection:') || 'Rejected by operations staff';
+      
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/room-requests/${requestId}/reject`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          notes: reason
+        })
+      });
+
+      if (response.ok) {
+        showNotification('Room request rejected', 'success');
+        // Refresh the data
+        fetchRoomsDashboardData();
+      } else {
+        const error = await response.json();
+        showNotification(error.message || 'Failed to reject request', 'error');
+      }
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      showNotification('Failed to reject request', 'error');
+    }
+  };
+
+  const handleViewRequest = (request) => {
+    // For now, just show a simple alert with request details
+    // You can implement a modal or detailed view later
+    alert(`Request Details:\nStudent: ${request.user?.full_name || 'N/A'}\nRoom Type: ${request.preferred_room_type || 'Any'}\nFloor: ${request.preferred_floor || 'Any'}\nStatus: ${request.status}\nRequested: ${new Date(request.requested_at).toLocaleDateString()}`);
+  };
+
+  // Room management handlers
+  const handleEditRoom = (room) => {
+    console.log('Editing room:', room);
+    setEditingRoom(room);
+    setNewStatus(room.status || '');
+    setShowEditModal(true);
+  };
+
+  const handleUpdateRoomStatus = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      if (!newStatus.trim()) {
+        showNotification('Status cannot be empty', 'error');
+        return;
+      }
+
+      // Validate status based on current room status and occupancy
+      const currentStatus = editingRoom?.status?.toLowerCase();
+      const occupied = editingRoom?.occupied || editingRoom?.current_occupancy || 0;
+      const capacity = editingRoom?.capacity || 1;
+      
+      console.log('Frontend validation:', {
+        roomId: editingRoom.id,
+        roomNumber: editingRoom.room_number,
+        currentStatus: currentStatus,
+        occupied: occupied,
+        capacity: capacity,
+        newStatus: newStatus,
+        editingRoomData: editingRoom
+      });
+      
+      let validStatuses = [];
+      
+      // Status update rules based on current status and occupancy
+      if (currentStatus === 'full') {
+        // Full rooms cannot be updated unless room requests are cancelled
+        showNotification('Cannot update full room status. Please cancel room requests first.', 'error');
+        return;
+      } else if (currentStatus === 'available') {
+        // Available rooms can be changed to any status
+        validStatuses = ['occupied', 'partially_filled', 'full', 'maintenance'];
+      } else if (currentStatus === 'partially_filled') {
+        // Partially filled rooms can only change to full or remain partially filled
+        validStatuses = ['full', 'partially_filled'];
+      } else if (currentStatus === 'occupied') {
+        // Occupied rooms can only change to full or remain occupied
+        validStatuses = ['full', 'occupied'];
+      } else {
+        // For maintenance or other statuses, allow all options
+        validStatuses = ['available', 'occupied', 'partially_filled', 'full', 'maintenance'];
+      }
+      
+      console.log('Valid statuses for current status', currentStatus, ':', validStatuses);
+      
+      if (!validStatuses.includes(newStatus.toLowerCase())) {
+        showNotification(`Cannot change status from '${currentStatus}' to '${newStatus}'. Valid options: ${validStatuses.join(', ')}`, 'error');
+        return;
+      }
+      
+      // Make API call to update room status
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      console.log('Updating room status:', {
+        roomId: editingRoom.id,
+        roomNumber: editingRoom.room_number,
+        roomType: editingRoom.room_type,
+        currentStatus: editingRoom.status,
+        newStatus: newStatus
+      });
+      
+      const response = await fetch(`${API_BASE_URL}/api/room-management/rooms/${editingRoom.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          status: newStatus
+        })
+      });
+
+      if (response.ok) {
+        showNotification(`Room ${editingRoom.room_number} status updated successfully`, 'success');
+        setShowEditModal(false);
+        setEditingRoom(null);
+        setNewStatus('');
+        // Refresh the data
+        fetchRoomsDashboardData();
+      } else {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        console.error('API Error Response:', response.status, errorData);
+        
+        // Handle specific database constraint errors
+        let errorMessage = errorData.message || 'Unknown error';
+        if (errorMessage.includes('rooms_status_check')) {
+          errorMessage = `Invalid status transition for ${editingRoom?.room_type} room. Please check room type requirements.`;
+        } else if (errorMessage.includes('constraint')) {
+          errorMessage = 'This status change is not allowed for this room type.';
+        }
+        
+        showNotification(`Failed to update room status: ${errorMessage}`, 'error');
+      }
+    } catch (error) {
+      console.error('Error updating room:', error);
+      showNotification('Failed to update room status', 'error');
+    }
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setEditingRoom(null);
+    setNewStatus('');
+  };
+
+  const handleViewRoom = (room) => {
+    setViewingRoom(room);
+    setShowViewModal(true);
+  };
+
+  const handleCloseViewModal = () => {
+    setShowViewModal(false);
+    setViewingRoom(null);
+  };
+
   const fetchOpsStats = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch('http://localhost:3002/api/operations/dashboard-stats', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const res = await fetch(`${API_BASE_URL}/api/operations/dashboard-stats`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -238,7 +435,8 @@ const OperationsDashboard = () => {
       params.set('limit', '20');
       if (maintStatusFilter) params.set('status', maintStatusFilter);
       if (maintPriorityFilter) params.set('priority', maintPriorityFilter);
-      const res = await fetch(`http://localhost:3002/api/operations/maintenance-requests?${params.toString()}`, {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const res = await fetch(`${API_BASE_URL}/api/operations/maintenance-requests?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -267,7 +465,8 @@ const OperationsDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       const body = { ...updates };
-      const res = await fetch(`http://localhost:3002/api/operations/maintenance-requests/${id}/assign`, {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const res = await fetch(`${API_BASE_URL}/api/operations/maintenance-requests/${id}/assign`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -291,7 +490,8 @@ const OperationsDashboard = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch('http://localhost:3002/api/operations/room-assignments', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const res = await fetch(`${API_BASE_URL}/api/operations/room-assignments`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -343,7 +543,8 @@ const OperationsDashboard = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch('http://localhost:3002/api/operations/room-assignments', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const res = await fetch(`${API_BASE_URL}/api/operations/room-assignments`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -370,7 +571,8 @@ const OperationsDashboard = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch('http://localhost:3002/api/operations/recent-checkins?days=7&limit=20', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const res = await fetch(`${API_BASE_URL}/api/operations/recent-checkins?days=7&limit=20`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -398,7 +600,8 @@ const OperationsDashboard = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch('http://localhost:3002/api/operations/rooms-overview', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const res = await fetch(`${API_BASE_URL}/api/operations/rooms-overview`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -430,8 +633,10 @@ const OperationsDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      
       // Fetch rooms data
-      const roomsRes = await fetch('http://localhost:3002/api/room-allocation/rooms', {
+      const roomsRes = await fetch(`${API_BASE_URL}/api/room-allocation/rooms`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -439,7 +644,7 @@ const OperationsDashboard = () => {
       });
       
       // Fetch room requests
-      const requestsRes = await fetch('http://localhost:3002/api/room-allocation/requests', {
+      const requestsRes = await fetch(`${API_BASE_URL}/api/room-allocation/requests`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -447,7 +652,7 @@ const OperationsDashboard = () => {
       });
       
       // Fetch room allocations
-      const allocationsRes = await fetch('http://localhost:3002/api/room-allocations', {
+      const allocationsRes = await fetch(`${API_BASE_URL}/api/room-allocations`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -461,12 +666,12 @@ const OperationsDashboard = () => {
 
       if (requestsRes.ok) {
         const requestsResult = await requestsRes.json();
-        setRoomRequests(requestsResult.data.requests || []);
+        setRoomRequests(requestsResult.data?.requests || []);
       }
 
       if (allocationsRes.ok) {
         const allocationsResult = await allocationsRes.json();
-        setRoomAllocations(allocationsResult.data || []);
+        setRoomAllocations(allocationsResult.data?.allocations || []);
       }
 
       // If any API call failed, provide fallback data
@@ -541,7 +746,8 @@ const OperationsDashboard = () => {
       // Create full room number with block
       const fullRoomNumber = `${roomFormData.block}${roomFormData.floor}${roomFormData.room_number}`;
 
-      const response = await fetch('http://localhost:3002/api/room-allocation/rooms', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/room-allocation/rooms`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -995,19 +1201,10 @@ const OperationsDashboard = () => {
 
   const renderRoomsDashboard = () => (
     <div className="space-y-8">
-      {/* Header with Add Room Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-800">Rooms & Allocations Dashboard</h2>
-          <p className="text-slate-600">Manage rooms, requests, and allocations</p>
-        </div>
-        <button
-          onClick={() => setShowAddRoomModal(true)}
-          className="flex items-center space-x-2 px-6 py-3 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add New Room</span>
-        </button>
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800">Rooms & Allocations Dashboard</h2>
+        <p className="text-slate-600">Review and process student room requests</p>
       </div>
 
       {/* Statistics Cards */}
@@ -1019,8 +1216,8 @@ const OperationsDashboard = () => {
             </div>
             <div>
               <h3 className="text-lg font-semibold text-slate-800">Total Rooms</h3>
-              <p className="text-2xl font-bold text-slate-900">{roomsData.length}</p>
-              <p className="text-sm text-slate-600">Available: {roomsData.filter(r => r.is_available).length}</p>
+              <p className="text-2xl font-bold text-slate-900">{(roomsData || []).length}</p>
+              <p className="text-sm text-slate-600">Available: {(roomsData || []).filter(r => r.is_available).length}</p>
             </div>
           </div>
         </div>
@@ -1032,7 +1229,7 @@ const OperationsDashboard = () => {
             </div>
             <div>
               <h3 className="text-lg font-semibold text-slate-800">Pending Requests</h3>
-              <p className="text-2xl font-bold text-slate-900">{roomRequests.filter(r => r.status === 'pending').length}</p>
+              <p className="text-2xl font-bold text-slate-900">{(roomRequests || []).filter(r => r.status === 'pending').length}</p>
               <p className="text-sm text-slate-600">Awaiting allocation</p>
             </div>
           </div>
@@ -1059,7 +1256,7 @@ const OperationsDashboard = () => {
             <div>
               <h3 className="text-lg font-semibold text-slate-800">Occupancy Rate</h3>
               <p className="text-2xl font-bold text-slate-900">
-                {roomsData.length > 0 ? Math.round((roomsData.reduce((sum, r) => sum + (r.occupied || 0), 0) / roomsData.reduce((sum, r) => sum + r.capacity, 0)) * 100) : 0}%
+                {(roomsData || []).length > 0 ? Math.round(((roomsData || []).reduce((sum, r) => sum + (r.occupied || 0), 0) / (roomsData || []).reduce((sum, r) => sum + r.capacity, 0)) * 100) : 0}%
               </p>
               <p className="text-sm text-slate-600">Current utilization</p>
             </div>
@@ -1121,7 +1318,7 @@ const OperationsDashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {roomsData
+              {(roomsData || [])
                 .filter(room => {
                   const matchesSearch = !roomsSearch || 
                     String(room.room_number).toLowerCase().includes(roomsSearch.toLowerCase()) ||
@@ -1140,7 +1337,9 @@ const OperationsDashboard = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.capacity}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{room.occupied || 0}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                    {room.price ? `$${room.price}/month` : 'N/A'}
+                    {room.price ? 
+                      (room.room_number === 'A1102' ? `$${room.price}/year` : `$${room.price}/month`) 
+                      : 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -1153,17 +1352,25 @@ const OperationsDashboard = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
-                      <button className="text-blue-600 hover:text-blue-700">
+                      <button 
+                        onClick={() => handleEditRoom(room)}
+                        className="text-blue-600 hover:text-blue-700"
+                        title="Edit Room"
+                      >
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button className="text-amber-600 hover:text-amber-700">
+                      <button 
+                        onClick={() => handleViewRoom(room)}
+                        className="text-amber-600 hover:text-amber-700"
+                        title="View Room Details"
+                      >
                         <Eye className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {roomsData.length === 0 && (
+              {(roomsData || []).length === 0 && (
                 <tr>
                   <td colSpan="8" className="px-6 py-12 text-center text-slate-500">No rooms found</td>
                 </tr>
@@ -1217,7 +1424,7 @@ const OperationsDashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {roomRequests
+              {(roomRequests || [])
                 .filter(request => {
                   const matchesStatus = !requestFilters.status || request.status === requestFilters.status;
                   const matchesType = !requestFilters.room_type || request.preferred_room_type === requestFilters.room_type;
@@ -1261,18 +1468,35 @@ const OperationsDashboard = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
                       {request.status === 'pending' && (
-                        <button className="text-green-600 hover:text-green-700">
-                          <CheckCircle className="w-4 h-4" />
-                        </button>
+                        <>
+                          <button 
+                            onClick={() => handleApproveRequest(request.id)}
+                            className="text-green-600 hover:text-green-700"
+                            title="Approve Request"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleRejectRequest(request.id)}
+                            className="text-red-600 hover:text-red-700"
+                            title="Reject Request"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        </>
                       )}
-                      <button className="text-amber-600 hover:text-amber-700">
+                      <button 
+                        onClick={() => handleViewRequest(request)}
+                        className="text-amber-600 hover:text-amber-700"
+                        title="View Details"
+                      >
                         <Eye className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {roomRequests.length === 0 && (
+              {(roomRequests || []).length === 0 && (
                 <tr>
                   <td colSpan="7" className="px-6 py-12 text-center text-slate-500">No room requests found</td>
                 </tr>
@@ -1299,7 +1523,7 @@ const OperationsDashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {roomAllocations.map((allocation) => (
+              {(roomAllocations || []).map((allocation) => (
                 <tr key={allocation.id} className="hover:bg-slate-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -1336,7 +1560,7 @@ const OperationsDashboard = () => {
                   </td>
                 </tr>
               ))}
-              {roomAllocations.length === 0 && (
+              {(roomAllocations || []).length === 0 && (
                 <tr>
                   <td colSpan="6" className="px-6 py-12 text-center text-slate-500">No allocations found</td>
                 </tr>
@@ -1720,6 +1944,351 @@ const OperationsDashboard = () => {
       
       {/* Modals */}
       <AddRoomModal />
+      
+      {/* Edit Room Status Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+                  <Edit className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800">Edit Room Status</h3>
+                  <p className="text-sm text-slate-600">Update status for {editingRoom?.room_number}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseEditModal}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Current Status
+                  </label>
+                  <div className="px-3 py-2 bg-slate-100 rounded-lg text-sm text-slate-600">
+                    {editingRoom?.status || 'N/A'}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    New Status *
+                  </label>
+                  <select
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value)}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  >
+                    <option value="">Select new status</option>
+                    {(() => {
+                      const currentStatus = editingRoom?.status?.toLowerCase();
+                      const occupied = editingRoom?.occupied || editingRoom?.current_occupancy || 0;
+                      const capacity = editingRoom?.capacity || 1;
+                      
+                      console.log('Dropdown validation:', {
+                        currentStatus: currentStatus,
+                        occupied: occupied,
+                        capacity: capacity,
+                        editingRoom: editingRoom
+                      });
+                      
+                      // Define valid statuses based on current status and occupancy
+                      let validStatuses = [];
+                      
+                      if (currentStatus === 'full') {
+                        // Full rooms cannot be updated unless room requests are cancelled
+                        validStatuses = [];
+                      } else if (currentStatus === 'available') {
+                        // Available rooms can be changed to any status
+                        validStatuses = ['occupied', 'partially_filled', 'full', 'maintenance'];
+                      } else if (currentStatus === 'partially_filled') {
+                        // Partially filled rooms can only change to full or remain partially filled
+                        validStatuses = ['full', 'partially_filled'];
+                      } else if (currentStatus === 'occupied') {
+                        // Occupied rooms can only change to full or remain occupied
+                        validStatuses = ['full', 'occupied'];
+                      } else {
+                        // For maintenance or other statuses, allow all options
+                        validStatuses = ['available', 'occupied', 'partially_filled', 'full', 'maintenance'];
+                      }
+                      
+                      // Filter out current status to avoid unnecessary updates
+                      validStatuses = validStatuses.filter(status => status !== currentStatus);
+                      
+                      console.log('Dropdown valid statuses for current status', currentStatus, ':', validStatuses);
+                      
+                      if (validStatuses.length === 0) {
+                        return (
+                          <option value="" disabled>
+                            Cannot update full room (cancel requests first)
+                          </option>
+                        );
+                      }
+                      
+                      return validStatuses.map(status => (
+                        <option key={status} value={status}>
+                          {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
+                        </option>
+                      ));
+                    })()}
+                  </select>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-xs font-bold">i</span>
+                    </div>
+                    <div className="text-sm text-blue-800">
+                      <p className="font-medium mb-1">Status Update Rules:</p>
+                      <ul className="space-y-1 text-xs">
+                        {editingRoom?.status?.toLowerCase() === 'full' && (
+                          <li>• <strong>Full rooms cannot be updated</strong> - Cancel room requests first</li>
+                        )}
+                        {editingRoom?.status?.toLowerCase() === 'available' && (
+                          <li>• <strong>Available rooms</strong> can be changed to any status</li>
+                        )}
+                        {editingRoom?.status?.toLowerCase() === 'partially_filled' && (
+                          <li>• <strong>Partially filled rooms</strong> can only change to full or remain partially filled</li>
+                        )}
+                        {editingRoom?.status?.toLowerCase() === 'occupied' && (
+                          <li>• <strong>Occupied rooms</strong> can only change to full or remain occupied</li>
+                        )}
+                        <li>• <strong>To change to "Available":</strong> Room requests must be cancelled first</li>
+                        <li>• <strong>Maintenance:</strong> Can be set for any room regardless of occupancy</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end space-x-3 p-6 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+              <button
+                onClick={handleCloseEditModal}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateRoomStatus}
+                disabled={!newStatus.trim()}
+                className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>Update Status</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Room Details Modal */}
+      {showViewModal && viewingRoom && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 transform transition-all">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-200">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
+                  <Eye className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-800">Room Details</h3>
+                  <p className="text-sm text-slate-600">Complete information for Room {viewingRoom.room_number}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseViewModal}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Column - Basic Info */}
+                <div className="space-y-6">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <h4 className="font-semibold text-slate-800">Location & Type</h4>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Room Number:</span>
+                        <span className="font-medium text-slate-900">Room {viewingRoom.room_number}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Floor:</span>
+                        <span className="font-medium text-slate-900">{viewingRoom.floor || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Block:</span>
+                        <span className="font-medium text-slate-900">{viewingRoom.block || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Type:</span>
+                        <span className="font-medium text-slate-900 capitalize">{viewingRoom.room_type || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <div className="w-8 h-8 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <h4 className="font-semibold text-slate-800">Occupancy Details</h4>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Capacity:</span>
+                        <span className="font-medium text-slate-900">{viewingRoom.capacity || 'N/A'} persons</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Currently Occupied:</span>
+                        <span className="font-medium text-slate-900">{viewingRoom.occupied || viewingRoom.current_occupancy || 0} persons</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Available Slots:</span>
+                        <span className="font-medium text-slate-900">{(viewingRoom.capacity || 0) - (viewingRoom.occupied || viewingRoom.current_occupancy || 0)} persons</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Occupancy Rate:</span>
+                        <span className="font-medium text-slate-900">
+                          {viewingRoom.capacity ? Math.round(((viewingRoom.occupied || viewingRoom.current_occupancy || 0) / viewingRoom.capacity) * 100) : 0}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column - Status & Pricing */}
+                <div className="space-y-6">
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
+                        <Activity className="w-4 h-4" />
+                      </div>
+                      <h4 className="font-semibold text-slate-800">Status & Pricing</h4>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Current Status:</span>
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          viewingRoom.status === 'available' ? 'bg-green-100 text-green-800' :
+                          viewingRoom.status === 'occupied' ? 'bg-blue-100 text-blue-800' :
+                          viewingRoom.status === 'maintenance' ? 'bg-red-100 text-red-800' :
+                          viewingRoom.status === 'partially_filled' ? 'bg-yellow-100 text-yellow-800' :
+                          viewingRoom.status === 'full' ? 'bg-purple-100 text-purple-800' :
+                          'bg-slate-100 text-slate-800'
+                        }`}>
+                          {viewingRoom.status || 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Rate:</span>
+                        <span className="font-medium text-slate-900">
+                          {viewingRoom.price ? 
+                            `$${viewingRoom.price}/${viewingRoom.room_number === 'A1102' ? 'year' : 'month'}` 
+                            : 'N/A'
+                          }
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Last Updated:</span>
+                        <span className="font-medium text-slate-900">
+                          {viewingRoom.updated_at ? new Date(viewingRoom.updated_at).toLocaleDateString() : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center">
+                        <Wrench className="w-4 h-4" />
+                      </div>
+                      <h4 className="font-semibold text-slate-800">Amenities</h4>
+                    </div>
+                    <div className="text-sm">
+                      {viewingRoom.amenities && viewingRoom.amenities.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-1">
+                          {viewingRoom.amenities.map((amenity, index) => (
+                            <div key={index} className="flex items-center space-x-2">
+                              <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                              <span className="text-slate-700">{amenity}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-slate-500 italic">No special amenities listed</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Additional Info */}
+              <div className="mt-6 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <div className="flex items-center space-x-3 mb-3">
+                  <div className="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <h4 className="font-semibold text-slate-800">Additional Information</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Room ID:</span>
+                    <span className="font-medium text-slate-900 font-mono text-xs">{viewingRoom.id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Created:</span>
+                    <span className="font-medium text-slate-900">
+                      {viewingRoom.created_at ? new Date(viewingRoom.created_at).toLocaleDateString() : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Room Code:</span>
+                    <span className="font-medium text-slate-900">{viewingRoom.room_code || viewingRoom.room_number}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Price (Raw):</span>
+                    <span className="font-medium text-slate-900">${viewingRoom.price || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end space-x-3 p-6 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+              <button
+                onClick={handleCloseViewModal}
+                className="px-6 py-2 bg-slate-600 text-white rounded-xl hover:bg-slate-700 transition-colors flex items-center space-x-2"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>Close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

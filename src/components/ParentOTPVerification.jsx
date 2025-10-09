@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../contexts/NotificationContext';
 import { useNavigate } from 'react-router-dom';
+import { getDashboardPath } from '../lib/routingUtils';
 import { 
   Mail, 
   Lock, 
@@ -24,7 +25,8 @@ const ParentOTPVerification = () => {
   const onSubmitEmail = async (data) => {
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:3002/api/parent-verification/send-otp', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/parent-verification/send-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -52,7 +54,8 @@ const ParentOTPVerification = () => {
   const onSubmitOTP = async (data) => {
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:3002/api/parent-verification/verify-otp', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/parent-verification/verify-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -69,11 +72,13 @@ const ParentOTPVerification = () => {
         setStep('success');
         showNotification('OTP verified successfully!', 'success');
         
-        // Set session and redirect to parent dashboard
+        // Redirect using the magic link session URL
         if (result.data.session_url) {
           window.location.href = result.data.session_url;
         } else {
-          navigate('/parent-dashboard');
+          // Fallback to parent dashboard
+          const dashboardPath = getDashboardPath('parent');
+          navigate(dashboardPath);
         }
       } else {
         throw new Error(result.message || 'Invalid OTP');

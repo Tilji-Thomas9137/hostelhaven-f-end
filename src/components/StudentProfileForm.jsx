@@ -49,8 +49,6 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
       state: '',
       country: '',
       pincode: '',
-      emergency_contact_name: '',
-      emergency_contact_phone: '',
       parent_name: '',
       parent_phone: '',
       parent_email: '',
@@ -103,8 +101,6 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
         state: initialData?.state || '',
         country: initialData?.country || '',
         pincode: initialData?.pincode || '',
-        emergency_contact_name: initialData?.emergency_contact_name || '',
-        emergency_contact_phone: initialData?.emergency_contact_phone || '',
         parent_name: initialData?.parent_name || '',
         parent_phone: initialData?.parent_phone || '',
         parent_email: initialData?.parent_email || '',
@@ -276,8 +272,8 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
       // Prepare payload with only user_profiles fields
       const userProfilesFields = [
         'admission_number', 'course', 'batch_year', 'date_of_birth', 'gender',
-        'address', 'city', 'state', 'country', 'emergency_contact_name',
-        'emergency_contact_phone', 'parent_name', 'parent_phone', 'parent_email',
+        'address', 'city', 'state', 'country',
+        'parent_name', 'parent_phone', 'parent_email',
         'aadhar_number', 'blood_group', 'bio', 'pincode'
       ];
 
@@ -356,9 +352,11 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
       const file = event.target.files?.[0];
       if (!file) return;
       if (!file.type.startsWith('image/')) {
+        alert('Please select an image file.');
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
+        alert('Image must be 5MB or less.');
         return;
       }
 
@@ -370,14 +368,35 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `${session.user.id}/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('profile_picture')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+      // Try multiple buckets in case one doesn't exist
+      const candidateBuckets = [
+        (import.meta.env?.VITE_PROFILE_BUCKET || '').trim() || 'profile_picture',
+        'avatars',
+        'profile-photos',
+        'aadhar_verify'
+      ];
 
-      if (uploadError) throw uploadError;
+      let publicUrl = '';
+      let lastError = null;
+      for (const bucket of candidateBuckets) {
+        try {
+          const { error: upErr } = await supabase.storage
+            .from(bucket)
+            .upload(filePath, file, { cacheControl: '3600', upsert: true });
+          if (upErr) throw upErr;
+          const { data: pub } = supabase.storage.from(bucket).getPublicUrl(filePath);
+          publicUrl = pub.publicUrl;
+          break;
+        } catch (e) {
+          lastError = e;
+        }
+      }
 
-      const { data } = supabase.storage.from('profile_picture').getPublicUrl(filePath);
-      setAvatarUrl(data.publicUrl);
+      if (!publicUrl) {
+        throw lastError || new Error('Failed to upload avatar');
+      }
+
+      setAvatarUrl(publicUrl);
 
       // Persist avatar immediately to backend and auth metadata
       try {
@@ -388,19 +407,20 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`
           },
-          body: JSON.stringify({ avatar_url: data.publicUrl, status: 'complete', profile_status: 'active' })
+          body: JSON.stringify({ avatar_url: publicUrl, status: 'complete', profile_status: 'active' })
         });
       } catch (e) {
         console.warn('Failed to persist avatar to backend immediately:', e);
       }
 
       try {
-        await supabase.auth.updateUser({ data: { avatar_url: data.publicUrl } });
+        await supabase.auth.updateUser({ data: { avatar_url: publicUrl } });
       } catch (e) {
         console.warn('Failed to update auth metadata avatar_url:', e);
       }
     } catch (err) {
       console.error('Avatar upload failed:', err);
+      alert(`Avatar upload failed: ${err.message || 'Unknown error'}`);
     } finally {
       setIsUploading(false);
     }
@@ -989,7 +1009,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
           </div>
         </div>
 
-        {/* Emergency & Parent Information */}
+        {/* Parent Information */}
         <div className="bg-gradient-to-br from-white via-rose-50/30 to-pink-50/20 rounded-3xl shadow-2xl border border-rose-200/50 p-8">
           <h3 className="text-2xl font-bold text-slate-800 mb-8 flex items-center gap-4">
             <div className="w-12 h-12 bg-gradient-to-r from-rose-500 to-pink-600 rounded-2xl flex items-center justify-center shadow-lg">
@@ -997,41 +1017,13 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
             </div>
             <div>
               <div className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
-                Emergency & Parent Information
+                Parent Information
               </div>
-              <div className="text-sm text-slate-600 font-medium">Contact details for emergencies</div>
+              <div className="text-sm text-slate-600 font-medium">Parent/guardian contact details</div>
             </div>
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-6">
-              <h4 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-500" />
-                Emergency Contact
-              </h4>
-              
-              <InputField
-                name="emergency_contact_name"
-                label="Contact Name"
-                placeholder="Emergency contact name"
-                icon={User}
-                disabled
-              />
-              
-              <InputField
-                name="emergency_contact_phone"
-                label="Contact Phone"
-                type="tel"
-                placeholder="9876543210"
-                icon={Phone}
-                disabled
-                onChange={(e) => {
-                  const sanitized = e.target.value.replace(/\D/g, '').slice(0, 10);
-                  setValue('emergency_contact_phone', sanitized, { shouldValidate: true, shouldDirty: true });
-                }}
-              />
-            </div>
-            
             <div className="space-y-6">
               <h4 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-500" />

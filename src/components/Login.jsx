@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase, SITE_URL } from '../lib/supabase';
 import { loginSchema } from '../lib/validation';
 import { redirectToRoleBasedDashboard } from '../lib/supabaseUtils';
+import { getDashboardPath } from '../lib/routingUtils';
 import { Eye, EyeOff, Mail, Lock, CheckCircle } from 'lucide-react';
 import Logo from './Logo';
 import Navigation from './Navigation';
@@ -45,7 +46,9 @@ const Login = () => {
 
     try {
       // Use our backend API for authentication
-      const response = await fetch('http://localhost:3002/api/auth/login', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -103,25 +106,8 @@ const Login = () => {
       });
 
       // Navigate based on user role
-      switch (user.role) {
-        case 'admin':
-          navigate('/admin-dashboard');
-          break;
-        case 'warden':
-          navigate('/warden-dashboard');
-          break;
-        case 'hostel_operations_assistant':
-          navigate('/operations-dashboard');
-          break;
-        case 'student':
-          navigate('/student-dashboard');
-          break;
-        case 'parent':
-          navigate('/parent-dashboard');
-          break;
-        default:
-          navigate('/dashboard');
-      }
+      const dashboardPath = getDashboardPath(user.role);
+      navigate(dashboardPath);
     } catch (error) {
       console.error('Unexpected login error:', error);
       setError('An unexpected error occurred. Please try again.');
@@ -135,7 +121,8 @@ const Login = () => {
     setResendMessage('');
     
     try {
-      const response = await fetch('http://localhost:3002/api/auth/resend-confirmation', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/auth/resend-confirmation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

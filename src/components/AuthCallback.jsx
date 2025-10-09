@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { redirectToRoleBasedDashboard } from '../lib/supabaseUtils';
+import { getDashboardPath } from '../lib/routingUtils';
 import { Building2, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 const AuthCallback = () => {
@@ -122,7 +123,8 @@ const AuthCallback = () => {
 
       // Short delay to show success message
       setTimeout(() => {
-        navigate('/dashboard');
+        const dashboardPath = getDashboardPath(userProfile?.role);
+        navigate(dashboardPath);
       }, 1500);
     } catch (error) {
       console.error('Profile handling error:', error);

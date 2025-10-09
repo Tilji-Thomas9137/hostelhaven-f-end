@@ -274,17 +274,7 @@ const LandingPage = () => {
                 </p>
               </div>
               
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link
-                  to="/signup"
-                  className="group relative px-8 py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-semibold overflow-hidden transform hover:scale-105 transition-all duration-300 shadow-lg hover:shadow-amber-500/25"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-amber-600 to-orange-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  <div className="relative flex items-center justify-center">
-                    Start Your Journey
-                    <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
-                  </div>
-                </Link>
+              <div className="flex justify-center">
                 <button
                   onClick={() => {
                     const element = document.getElementById('features');

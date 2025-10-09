@@ -22,6 +22,7 @@ import ParcelManagement from './components/ParcelManagement';
 import QRVerification from './components/QRVerification';
 import StudentCleaningRequest from './components/StudentCleaningRequest';
 import CleaningManagement from './components/CleaningManagement';
+import RouteGuard from './components/RouteGuard';
 import { NotificationProvider } from './contexts/NotificationContext';
 import './App.css';
 
@@ -45,12 +46,12 @@ const AppContent = () => {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/activate" element={<Activate />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/student-dashboard" element={<StudentDashboard />} />
-        <Route path="/admin-dashboard" element={<ComprehensiveAdminDashboard />} />
-        <Route path="/warden-dashboard" element={<WardenDashboard />} />
-        <Route path="/operations-dashboard" element={<OperationsDashboard />} />
-        <Route path="/parent-dashboard" element={<ParentDashboard />} />
+        <Route path="/dashboard" element={<RouteGuard><Dashboard /></RouteGuard>} />
+        <Route path="/student-dashboard" element={<RouteGuard requiredRole="student"><StudentDashboard /></RouteGuard>} />
+        <Route path="/admin-dashboard" element={<RouteGuard requiredRole="admin"><ComprehensiveAdminDashboard /></RouteGuard>} />
+        <Route path="/warden-dashboard" element={<RouteGuard requiredRole="warden"><WardenDashboard /></RouteGuard>} />
+        <Route path="/operations-dashboard" element={<RouteGuard requiredRole="hostel_operations_assistant"><OperationsDashboard /></RouteGuard>} />
+        <Route path="/parent-dashboard" element={<RouteGuard requiredRole="parent"><ParentDashboard /></RouteGuard>} />
         <Route path="/test" element={<TestDashboard />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/services" element={<ServicesPage />} />

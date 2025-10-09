@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { createAccessDeniedComponent } from '../lib/routingUtils';
 import StudentDashboard from './dashboard/StudentDashboard';
 import ComprehensiveAdminDashboard from './dashboard/ComprehensiveAdminDashboard';
 import WardenDashboard from './dashboard/WardenDashboard';
@@ -22,7 +23,8 @@ const Dashboard = () => {
           return;
         }
 
-        const response = await fetch('http://localhost:3002/api/auth/me', {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+        const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
@@ -72,8 +74,11 @@ const Dashboard = () => {
   }
 
   if (!user) {
-    navigate('/login');
-    return null;
+    return createAccessDeniedComponent(
+      'Access Required',
+      'Go to Login',
+      () => navigate('/login')
+    );
   }
 
   // Route to appropriate dashboard based on user role

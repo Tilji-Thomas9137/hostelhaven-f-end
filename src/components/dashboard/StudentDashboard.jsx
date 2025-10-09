@@ -38,6 +38,7 @@ import {
 
 const StudentDashboard = () => {
   const navigate = useNavigate();
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
   const { showNotification } = useNotification();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -162,13 +163,20 @@ const StudentDashboard = () => {
     fetchUserData();
   }, [navigate]);
 
+  // Handle navigation when user is not available
+  useEffect(() => {
+    if (!isLoading && !user) {
+      navigate('/login');
+    }
+  }, [isLoading, user, navigate]);
+
   // Fetch unread payment_due notification on mount
   useEffect(() => {
     (async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
-        const res = await fetch('http://localhost:3002/api/notifications?type=payment_due&is_read=false&limit=1', {
+        const res = await fetch(`${API_BASE_URL}/api/notifications?type=payment_due&is_read=false&limit=1`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
         const json = await res.json();
@@ -197,7 +205,7 @@ const StudentDashboard = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session && dueNotification) {
-        await fetch(`http://localhost:3002/api/notifications/${dueNotification.id}/read`, {
+        await fetch(`${API_BASE_URL}/api/notifications/${dueNotification.id}/read`, {
           method: 'PUT',
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
@@ -230,11 +238,27 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      // Resolve the database user id (users.id) from auth uid if needed
+      let databaseUserId = user?.id;
+      if (!databaseUserId) {
+        const { data: userRow } = await supabase
+          .from('users')
+          .select('id')
+          .eq('auth_uid', session.user.id)
+          .maybeSingle();
+        databaseUserId = userRow?.id || null;
+      }
+
+      if (!databaseUserId) {
+        setRoomDetails(null);
+        return;
+      }
+
       // Simplified query to get room details from user_profiles
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
         .select('room_id, join_date')
-        .eq('user_id', session.user.id)
+        .eq('user_id', databaseUserId)
         .maybeSingle();
 
       if (profileError) {
@@ -277,7 +301,7 @@ const StudentDashboard = () => {
       if (!session) return;
 
       // Fetch payments from backend API
-      const response = await fetch('http://localhost:3002/api/payments/student', {
+      const response = await fetch(`${API_BASE_URL}/api/payments/student`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json'
@@ -429,11 +453,29 @@ const StudentDashboard = () => {
   const fetchStudentProfile = async () => {
     try {
       console.log('🚀 fetchStudentProfile called');
-      const { data: { session } } = await supabase.auth.getSession();
+      let { data: { session } } = await supabase.auth.getSession();
+      
+      // Try to refresh session if no session or expired
+      if (!session || !session.access_token) {
+        console.log('🔄 No valid session, attempting refresh...');
+        const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (refreshError) {
+          console.error('❌ Session refresh failed:', refreshError);
+          navigate('/login');
+          return;
+        }
+        
+        session = refreshedSession;
+        console.log('✅ Session refreshed successfully');
+      }
+      
       if (!session) {
-        console.log('❌ No session found');
+        console.log('❌ No session found after refresh');
+        navigate('/login');
         return;
       }
+      
       console.log('✅ Session found:', {
         email: session.user.email,
         id: session.user.id,
@@ -472,7 +514,7 @@ const StudentDashboard = () => {
       // Query admission registry via API endpoint (bypasses RLS)
       console.log('🔍 Making API call for student profile:', session.user.email);
       
-      const response = await fetch('http://localhost:3002/api/student-profile', {
+      const response = await fetch(`${API_BASE_URL}/api/student-profile`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -650,7 +692,6 @@ const StudentDashboard = () => {
   }
 
   if (!user) {
-    navigate('/login');
     return null;
   }
 
@@ -1465,8 +1506,6 @@ const StudentDashboard = () => {
 
       // Update user_profiles table using backend API
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-        
         const profileResponse = await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
           method: 'POST',
           headers: {
@@ -1758,7 +1797,7 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:3002/api/complaints', {
+      const response = await fetch(`${API_BASE_URL}/api/complaints`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -2170,7 +2209,7 @@ const StudentDashboard = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:3002/api/payments/${selectedPayment.id}/pay`, {
+      const response = await fetch(`${API_BASE_URL}/api/payments/${selectedPayment.id}/pay`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -2218,7 +2257,7 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch(`http://localhost:3002/api/complaints/${editingComplaint.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/complaints/${editingComplaint.id}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -2537,7 +2576,7 @@ const StudentDashboard = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const response = await fetch(`http://localhost:3002/api/complaints/${complaint.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/complaints/${complaint.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
