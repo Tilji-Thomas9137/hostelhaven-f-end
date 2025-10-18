@@ -18,6 +18,7 @@ import ComplaintManagement from './ComplaintManagement';
 import LeaveRequestManagement from './LeaveRequestManagement';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import ChatWidget from '../ui/ChatWidget';
+import NotificationBell from '../ui/NotificationBell';
 
 const ComprehensiveAdminDashboard = () => {
   const { showNotification } = useNotification();
@@ -481,8 +482,11 @@ const ComprehensiveAdminDashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64 animate-fade-in">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 text-lg font-medium">Loading admin dashboard...</p>
+        </div>
       </div>
     );
   }
@@ -516,10 +520,7 @@ const ComprehensiveAdminDashboard = () => {
               <Activity className="w-4 h-4" />
               <span className="hidden sm:inline">Refresh</span>
             </button>
-            <button className="relative rounded-lg p-2 hover:bg-slate-100 transition-base active:scale-95">
-              <Bell className="w-5 h-5 text-slate-600" />
-              <span className="absolute -top-0.5 -right-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1.5 text-[10px] font-semibold text-white">3</span>
-            </button>
+            <NotificationBell userId={user?.id} />
           </div>
         </div>
       </div>

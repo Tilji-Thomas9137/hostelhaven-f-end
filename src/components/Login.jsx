@@ -83,6 +83,12 @@ const Login = () => {
         } else if (result.message?.includes('not yet activated')) {
           setError(result.message);
           setShowResendConfirmation(false);
+        } else if (result.message?.includes('currently inactive')) {
+          setError('Your account is currently inactive. Please contact an administrator to activate your account.');
+          setShowResendConfirmation(false);
+        } else if (result.message?.includes('suspended')) {
+          setError('Your account has been suspended. Please contact an administrator.');
+          setShowResendConfirmation(false);
         } else {
           console.error('Login error:', result);
           setError(result.message || 'An error occurred during login. Please try again.');

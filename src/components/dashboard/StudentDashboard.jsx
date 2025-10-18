@@ -10,6 +10,8 @@ import StudentProfileForm from '../StudentProfileForm';
 import StudentProfileView from '../StudentProfileView';
 import StudentRoomRequest from './StudentRoomRequest';
 import StudentCleaningRequest from '../StudentCleaningRequest';
+import StudentLeaveRequest from '../StudentLeaveRequest';
+import StudentComplaints from '../StudentComplaints';
 import { 
   Building2, 
   Users, 
@@ -543,22 +545,19 @@ const StudentDashboard = () => {
         setHasProfile(true);
         setStudentProfile(profileData);
 
-        // Calculate completion status directly from profile data
+        // Calculate completion status with a minimal required set
+        // Aligning with admin-provided fields to avoid false "incomplete" states
         const requiredFields = [
-          'admission_number', 'course', 'batch_year', 'date_of_birth',
-          'address', 'city', 'state', 'country', 'emergency_contact_name',
-          'emergency_contact_phone', 'parent_name', 'parent_phone', 'parent_email',
-          'aadhar_number', 'blood_group'
+          'admission_number',
+          'course',
+          'batch_year'
         ];
 
-        const missingFields = requiredFields.filter(field => !profileData[field] || profileData[field] === '');
+        const missingFields = requiredFields.filter(field => !profileData[field] && profileData[field] !== 0);
         const completion = Math.round(((requiredFields.length - missingFields.length) / requiredFields.length) * 100);
-        
-        // Determine status based on completion
-        let status = profileData.status || 'incomplete';
-        if (completion === 100 && status === 'incomplete') {
-          status = 'complete';
-        }
+
+        // Determine status based on minimal completion (treat as complete when minimal set is present)
+        let status = profileData.status || (completion === 100 ? 'complete' : 'incomplete');
 
         setProfileCompletion(completion);
         setProfileStatus(status);
@@ -734,19 +733,6 @@ const StudentDashboard = () => {
           </div>
         )}
 
-        {hasProfile === true && profileStatus === 'incomplete' && (
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-6">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl flex items-center justify-center">
-                <AlertCircle className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-800">⚠️ Profile Incomplete ({profileCompletion}%)</h3>
-                <p className="text-slate-600">Your profile is incomplete. Please contact the hostel administration to complete your profile information.</p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {hasProfile === true && profileStatus === 'pending_review' && (
           <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-2xl p-6">
@@ -762,18 +748,7 @@ const StudentDashboard = () => {
           </div>
         )}
 
-        {/* Quick Stats */}
-        {isProfileIncomplete && !isProfileLoading && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-            <div className="flex items-center space-x-3">
-              <AlertCircle className="w-6 h-6 text-red-600" />
-              <div>
-                <h3 className="text-lg font-semibold text-red-800">Access Restricted</h3>
-                <p className="text-red-600">Complete your profile to access room details, payments, complaints, and leave requests.</p>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Quick Stats - Access restriction notice removed before completion */}
 
         {/* Loading indicator for data */}
         {isInitialLoad && (
@@ -2646,9 +2621,9 @@ const StudentDashboard = () => {
       case 'cleaning':
         return <StudentCleaningRequest />;
       case 'complaints':
-        return renderComplaints();
+        return <StudentComplaints />;
       case 'leave':
-        return renderLeaveRequests();
+        return <StudentLeaveRequest />;
       case 'profile':
         return renderProfile();
       default:

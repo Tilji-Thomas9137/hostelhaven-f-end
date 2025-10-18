@@ -35,32 +35,20 @@ const StudentCleaningRequest = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Get user's room allocation first
-      const { data: roomAllocation } = await supabase
-        .from('room_allocations')
-        .select('room_id')
-        .eq('user_id', session.user.id)
-        .eq('status', 'active')
-        .single();
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-      if (!roomAllocation) {
-        setCleaningRequests([]);
-        setIsLoading(false);
-        return;
-      }
-
-      // Fetch cleaning requests for the user's room
-      const { data: requests, error } = await supabase
-        .from('cleaning_requests')
-        .select('*')
-        .eq('room_id', roomAllocation.room_id)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching cleaning requests:', error);
-        setCleaningRequests([]);
+      if (response.ok) {
+        const result = await response.json();
+        setCleaningRequests(result.data?.cleaningRequests || []);
       } else {
-        setCleaningRequests(requests || []);
+        console.error('Error fetching cleaning requests:', response.status);
+        setCleaningRequests([]);
       }
     } catch (error) {
       console.error('Error fetching cleaning requests:', error);
@@ -78,47 +66,36 @@ const StudentCleaningRequest = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Get user's room allocation
-      const { data: roomAllocation } = await supabase
-        .from('room_allocations')
-        .select('room_id')
-        .eq('user_id', session.user.id)
-        .eq('status', 'active')
-        .single();
-
-      if (!roomAllocation) {
-        showNotification('No room allocation found. Please contact hostel administration.', 'error');
-        return;
-      }
-
-      const { data: request, error } = await supabase
-        .from('cleaning_requests')
-        .insert({
-          room_id: roomAllocation.room_id,
-          student_id: session.user.id,
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          cleaning_type: formData.cleaning_type,
           preferred_date: formData.preferred_date,
           preferred_time: formData.preferred_time,
-          cleaning_type: formData.cleaning_type,
-          special_instructions: formData.special_instructions,
-          status: 'pending'
-        })
-        .select()
-        .single();
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      showNotification('Cleaning request submitted successfully!', 'success');
-      setShowModal(false);
-      setFormData({
-        room_id: '',
-        preferred_date: '',
-        preferred_time: '',
-        cleaning_type: 'general',
-        special_instructions: ''
+          special_instructions: formData.special_instructions
+        }),
       });
-      fetchCleaningRequests();
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        showNotification(result.message || 'Cleaning request submitted successfully!', 'success');
+        setShowModal(false);
+        setFormData({
+          room_id: '',
+          preferred_date: '',
+          preferred_time: '',
+          cleaning_type: 'general',
+          special_instructions: ''
+        });
+        fetchCleaningRequests();
+      } else {
+        throw new Error(result.message || 'Failed to submit cleaning request');
+      }
     } catch (error) {
       console.error('Error submitting cleaning request:', error);
       showNotification(error.message || 'Failed to submit cleaning request', 'error');
@@ -131,17 +108,25 @@ const StudentCleaningRequest = () => {
     if (!confirm('Are you sure you want to cancel this cleaning request?')) return;
 
     try {
-      const { error } = await supabase
-        .from('cleaning_requests')
-        .update({ status: 'cancelled' })
-        .eq('id', requestId);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
 
-      if (error) {
-        throw new Error(error.message);
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/${requestId}/cancel`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        showNotification(result.message || 'Cleaning request cancelled successfully!', 'success');
+        fetchCleaningRequests();
+      } else {
+        throw new Error(result.message || 'Failed to cancel cleaning request');
       }
-
-      showNotification('Cleaning request cancelled successfully!', 'success');
-      fetchCleaningRequests();
     } catch (error) {
       console.error('Error cancelling cleaning request:', error);
       showNotification(error.message || 'Failed to cancel cleaning request', 'error');

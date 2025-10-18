@@ -401,6 +401,10 @@ const AuthCallback = () => {
           errorMessage = 'Invalid authentication token. Please log in again.';
         } else if (error.message.includes('Authentication failed')) {
           errorMessage = 'Authentication failed. Please check your credentials and try again.';
+        } else if (error.message.includes('currently inactive')) {
+          errorMessage = 'Your account is currently inactive. Please contact an administrator to activate your account.';
+        } else if (error.message.includes('suspended')) {
+          errorMessage = 'Your account has been suspended. Please contact an administrator.';
         } else if (error.message) {
           errorMessage = error.message;
         }

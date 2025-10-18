@@ -38,7 +38,7 @@ const StudentProfileView = ({ studentProfile, user }) => {
   }
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return '';
     try {
       return new Date(dateString).toLocaleDateString('en-US', {
         year: 'numeric',
@@ -46,12 +46,12 @@ const StudentProfileView = ({ studentProfile, user }) => {
         day: 'numeric'
       });
     } catch {
-      return 'N/A';
+      return '';
     }
   };
 
   const getAge = (dateOfBirth) => {
-    if (!dateOfBirth) return 'N/A';
+    if (!dateOfBirth) return '';
     try {
       const today = new Date();
       const birthDate = new Date(dateOfBirth);
@@ -62,12 +62,12 @@ const StudentProfileView = ({ studentProfile, user }) => {
       }
       return `${age} years`;
     } catch {
-      return 'N/A';
+      return '';
     }
   };
 
   const getAcademicYear = (batchYear) => {
-    if (!batchYear) return 'N/A';
+    if (!batchYear) return '';
     const currentYear = new Date().getFullYear();
     const yearDiff = currentYear - batchYear;
     if (yearDiff === 0) return '1st Year';
@@ -101,9 +101,9 @@ const StudentProfileView = ({ studentProfile, user }) => {
               </div>
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-slate-800">{profileUser?.full_name || user?.fullName || 'N/A'}</h2>
-              <p className="text-slate-600">{studentProfile?.admission_number || 'N/A'}</p>
-              <p className="text-sm text-slate-500">{studentProfile?.course || 'N/A'} • Batch {studentProfile?.batch_year || 'N/A'}</p>
+              <h2 className="text-2xl font-bold text-slate-800">{profileUser?.full_name || user?.fullName || ''}</h2>
+              <p className="text-slate-600">{studentProfile?.admission_number || ''}</p>
+              <p className="text-sm text-slate-500">{studentProfile?.course || ''}{studentProfile?.batch_year ? ` • Batch ${studentProfile.batch_year}` : ''}</p>
             </div>
           </div>
           <div className="text-right">
@@ -127,28 +127,23 @@ const StudentProfileView = ({ studentProfile, user }) => {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-slate-600">Full Name</label>
-              <p className="text-lg font-semibold text-slate-800">{profileUser?.full_name || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{profileUser?.full_name || ''}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-600">Phone Number</label>
-              <p className="text-lg font-semibold text-slate-800">{profileUser?.phone || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{profileUser?.phone || ''}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-600">Email Address</label>
-              <p className="text-lg font-semibold text-slate-800">{profileUser?.email || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{profileUser?.email || ''}</p>
             </div>
           </div>
           
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-slate-600">Gender</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.gender || 'N/A'}</p>
-            </div>
-          </div>
+          <div className="space-y-4"></div>
         </div>
       </div>
 
-      {/* Academic Information */}
+      {/* Academic Information (gender and blood group removed) */}
       <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
         <h3 className="text-xl font-semibold text-slate-800 mb-6 flex items-center gap-2">
           <GraduationCap className="w-6 h-6 text-blue-600" />
@@ -158,38 +153,22 @@ const StudentProfileView = ({ studentProfile, user }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <label className="text-sm font-medium text-slate-600">Admission Number</label>
-            <p className="text-lg font-semibold text-slate-800">{studentProfile?.admission_number || 'N/A'}</p>
+            <p className="text-lg font-semibold text-slate-800">{studentProfile?.admission_number || ''}</p>
           </div>
           <div>
             <label className="text-sm font-medium text-slate-600">Course</label>
-            <p className="text-lg font-semibold text-slate-800">{studentProfile?.course || 'N/A'}</p>
+            <p className="text-lg font-semibold text-slate-800">{studentProfile?.course || ''}</p>
           </div>
           <div>
             <label className="text-sm font-medium text-slate-600">Batch Year</label>
-            <p className="text-lg font-semibold text-slate-800">{studentProfile?.batch_year || 'N/A'}</p>
+            <p className="text-lg font-semibold text-slate-800">{studentProfile?.batch_year || ''}</p>
           </div>
           {/* Academic Year intentionally removed as per requirements */}
-          <div>
-            <label className="text-sm font-medium text-slate-600">Blood Group</label>
-            <p className="text-lg font-semibold text-slate-800">{studentProfile?.blood_group || 'N/A'}</p>
-          </div>
+          {/* Blood Group removed */}
         </div>
       </div>
 
-      {/* Address Information */}
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h3 className="text-xl font-semibold text-slate-800 mb-6 flex items-center gap-2">
-          <MapPin className="w-6 h-6 text-green-600" />
-          Address Information
-        </h3>
-        
-        <div className="space-y-4">
-          <div>
-            <label className="text-sm font-medium text-slate-600">Address</label>
-            <p className="text-lg font-semibold text-slate-800">{studentProfile?.address || 'N/A'}</p>
-          </div>
-        </div>
-      </div>
+      {/* Address Information removed */}
 
       {/* Emergency & Parent Information */}
       <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
@@ -206,15 +185,15 @@ const StudentProfileView = ({ studentProfile, user }) => {
             </h4>
             <div>
               <label className="text-sm font-medium text-slate-600">Parent Name</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.parent_name || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{studentProfile?.parent_name || ''}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-600">Parent Phone</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.parent_phone || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{studentProfile?.parent_phone || ''}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-600">Parent Email</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.parent_email || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{studentProfile?.parent_email || ''}</p>
             </div>
           </div>
         </div>
@@ -231,7 +210,7 @@ const StudentProfileView = ({ studentProfile, user }) => {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-slate-600">Aadhar Number</label>
-              <p className="text-lg font-semibold text-slate-800">{studentProfile?.aadhar_number || 'N/A'}</p>
+              <p className="text-lg font-semibold text-slate-800">{studentProfile?.aadhar_number || ''}</p>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-green-500" />

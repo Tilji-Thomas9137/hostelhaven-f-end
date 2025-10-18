@@ -24,8 +24,12 @@ export const NotificationProvider = ({ children }) => {
     setNotifications(prev => prev.filter(notification => notification.id !== id));
   }, []);
 
+  const clearAllNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
   return (
-    <NotificationContext.Provider value={{ showNotification, hideNotification }}>
+    <NotificationContext.Provider value={{ showNotification, hideNotification, clearAllNotifications }}>
       {children}
       <div className="fixed z-50 top-0 right-0 p-4 space-y-4">
         {notifications.map(({ id, message, type, duration }) => (

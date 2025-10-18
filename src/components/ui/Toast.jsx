@@ -43,24 +43,24 @@ const Toast = ({ message, type = 'success', duration = 3000, onClose }) => {
   };
 
   const getStyles = () => {
-    const baseStyles = `fixed top-4 right-4 flex items-center space-x-3 px-6 py-4 rounded-2xl shadow-2xl transform transition-all duration-500 ease-out backdrop-blur-sm border ${
+    const baseStyles = `fixed top-4 right-4 flex items-center space-x-3 px-6 py-4 rounded-2xl shadow-2xl transform transition-all duration-500 ease-out backdrop-blur-md border-2 ${
       isAnimating 
         ? 'translate-x-0 opacity-100 scale-100' 
         : 'translate-x-full opacity-0 scale-95'
     }`;
     switch (type) {
       case 'success':
-        return `${baseStyles} bg-green-50/95 border-green-200/50`;
+        return `${baseStyles} bg-gradient-to-r from-green-50 to-emerald-50 border-green-300/60 shadow-green-200/50`;
       case 'error':
-        return `${baseStyles} bg-red-50/95 border-red-200/50`;
+        return `${baseStyles} bg-gradient-to-r from-red-50 to-rose-50 border-red-300/60 shadow-red-200/50`;
       case 'warning':
-        return `${baseStyles} bg-yellow-50/95 border-yellow-200/50`;
+        return `${baseStyles} bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-300/60 shadow-yellow-200/50`;
       case 'info':
-        return `${baseStyles} bg-blue-50/95 border-blue-200/50`;
+        return `${baseStyles} bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300/60 shadow-blue-200/50`;
       case 'cancelled':
-        return `${baseStyles} bg-amber-50/95 border-amber-200/50`;
+        return `${baseStyles} bg-gradient-to-r from-amber-50 to-orange-50 border-amber-300/60 shadow-amber-200/50`;
       default:
-        return `${baseStyles} bg-blue-50/95 border-blue-200/50`;
+        return `${baseStyles} bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300/60 shadow-blue-200/50`;
     }
   };
 

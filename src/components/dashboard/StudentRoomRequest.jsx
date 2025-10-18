@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 const StudentRoomRequest = () => {
-  const { showNotification } = useNotification();
+  const { showNotification, clearAllNotifications } = useNotification();
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRoomId, setLoadingRoomId] = useState(null);
@@ -32,6 +32,11 @@ const StudentRoomRequest = () => {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [requestToCancel, setRequestToCancel] = useState(null);
   
+  // Enhanced request management states
+  const [requestStatus, setRequestStatus] = useState(null);
+  const [canSubmitNewRequest, setCanSubmitNewRequest] = useState(true);
+  const [requestMessage, setRequestMessage] = useState('');
+  
   
   // Filters
   const [roomSearch, setRoomSearch] = useState('');
@@ -39,8 +44,58 @@ const StudentRoomRequest = () => {
   const [floorFilter, setFloorFilter] = useState('');
 
   useEffect(() => {
+    clearAllNotifications(); // Clear any stale notifications
     fetchAllData();
   }, []);
+
+  // Update request status and form availability whenever myRequest or myAllocation changes
+  useEffect(() => {
+    updateRequestStatus();
+  }, [myRequest, myAllocation]);
+
+  const updateRequestStatus = () => {
+    if (myAllocation && myAllocation.allocation_status === 'confirmed') {
+      // Student has confirmed room allocation
+      setRequestStatus('allocated');
+      setCanSubmitNewRequest(false);
+      setRequestMessage('You have been allocated a room. No new requests can be submitted.');
+      return;
+    }
+
+    if (!myRequest) {
+      // No request exists
+      setRequestStatus('none');
+      setCanSubmitNewRequest(true);
+      setRequestMessage('');
+      return;
+    }
+
+    const status = myRequest.status;
+    setRequestStatus(status);
+
+    switch (status) {
+      case 'pending':
+        setCanSubmitNewRequest(false);
+        setRequestMessage('You have a pending room request. Please wait for approval or cancel it to submit a new request.');
+        break;
+      case 'approved':
+      case 'allocated':
+        setCanSubmitNewRequest(false);
+        setRequestMessage('Your room request has been approved. No new requests can be submitted.');
+        break;
+      case 'rejected':
+        setCanSubmitNewRequest(true);
+        setRequestMessage('Your previous request was rejected. You can now submit a new room request.');
+        break;
+      case 'cancelled':
+        setCanSubmitNewRequest(true);
+        setRequestMessage('Your previous request was cancelled. You can now submit a new room request.');
+        break;
+      default:
+        setCanSubmitNewRequest(true);
+        setRequestMessage('');
+    }
+  };
 
 
 
@@ -60,6 +115,13 @@ const StudentRoomRequest = () => {
     }
   };
 
+  const handleManualRefresh = async () => {
+    console.log('🔄 Manual refresh triggered');
+    showNotification('Refreshing data...', 'info', 2000);
+    await fetchAllData();
+    showNotification('Data refreshed successfully!', 'success', 2000);
+  };
+
   const fetchRooms = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -70,7 +132,7 @@ const StudentRoomRequest = () => {
 
       console.log('Fetching available rooms...');
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/rooms/available`, {
+      const response = await fetch(`${API_BASE_URL}/api/room-allocation/rooms`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -103,11 +165,17 @@ const StudentRoomRequest = () => {
         console.log('❌ No session found in fetchMyRequest');
         return;
       }
+      
+      console.log('🔑 Session found:', {
+        user_id: session.user.id,
+        email: session.user.email
+      });
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      console.log('📡 Fetching my requests from:', `${API_BASE_URL}/api/room-requests/my-requests`);
+      const timestamp = Date.now();
+      console.log('📡 Fetching my requests from:', `${API_BASE_URL}/api/room-requests/my-requests?t=${timestamp}`);
       
-      const response = await fetch(`${API_BASE_URL}/api/room-requests/my-requests`, {
+      const response = await fetch(`${API_BASE_URL}/api/room-requests/my-requests?t=${timestamp}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -118,24 +186,33 @@ const StudentRoomRequest = () => {
       
       if (response.ok) {
         const result = await response.json();
-        console.log('📄 Full API response:', result);
-        const requests = result.data?.requests || [];
-        console.log('📋 Requests array:', requests);
+        // Extract requests from the response - try multiple possible paths
+        const requests = result.data?.requests || result.requests || result.data || [];
         
-        // Prefer the latest pending request
-        const pendingRequest = requests.find(req => String(req.status).toLowerCase() === 'pending');
-        console.log('🔍 Pending request found:', pendingRequest);
+        console.log('📋 All requests from API:', requests);
         
-        if (pendingRequest) {
-          console.log('✅ Setting myRequest to:', pendingRequest);
-          setMyRequest(pendingRequest);
-        } else {
-          console.log('❌ No pending request found, setting to null');
-          setMyRequest(null);
-        }
-      } else if (response.status === 404) {
-        // If no request found, set to null
-        console.log('❌ No request found (404), setting to null');
+        // Filter out cancelled requests and find the most recent active request
+        const activeRequests = requests.filter(req => {
+          const isActive = req.status && req.status.toLowerCase() !== 'cancelled';
+          console.log(`🔍 Request ${req.id}: status=${req.status}, isActive=${isActive}`);
+          return isActive;
+        });
+        
+        console.log('✅ Active requests after filtering:', activeRequests);
+        
+        const pendingRequest = activeRequests.find(req => req.status.toLowerCase() === 'pending');
+        const requestToSet = pendingRequest || activeRequests[0] || null;
+        
+        console.log('🎯 Setting myRequest to:', requestToSet);
+        setMyRequest(requestToSet);
+      } else {
+        // Handle other error statuses
+        const errorText = await response.text();
+        console.error('❌ API request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
         setMyRequest(null);
       }
     } catch (error) {
@@ -153,15 +230,25 @@ const StudentRoomRequest = () => {
       // For now, we'll check if they have a room_id in their profile
       const { data: userProfile, error } = await supabase
         .from('users')
-        .select('room_id, rooms(*)')
+        .select('room_id')
         .eq('id', session.user.id)
         .single();
 
       if (!error && userProfile?.room_id) {
+        // Fetch room details separately if room_id exists
+        const { data: roomData } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('id', userProfile.room_id)
+          .single();
+        
         setMyAllocation({
           room_id: userProfile.room_id,
-          room: userProfile.rooms
+          room: roomData,
+          allocation_status: 'confirmed'
         });
+      } else {
+        setMyAllocation(null);
       }
     } catch (error) {
       console.error('Error fetching my allocation:', error);
@@ -169,9 +256,15 @@ const StudentRoomRequest = () => {
   };
 
   const handleRequestRoom = async (room) => {
-    // Prevent multiple requests while one is pending
-    if (myRequest && myRequest.status === 'pending') {
-      showNotification('You already have a pending room request. Please cancel it before submitting a new one.', 'error');
+    // Check if student can submit a new request
+    if (!canSubmitNewRequest) {
+      showNotification(requestMessage, 'error');
+      return;
+    }
+    
+    // Additional check for room allocation
+    if (myAllocation && myAllocation.allocation_status === 'confirmed') {
+      showNotification('You already have a confirmed room allocation. No new requests can be submitted.', 'error');
       return;
     }
     setIsSubmitting(true);
@@ -209,12 +302,26 @@ const StudentRoomRequest = () => {
       if (response.ok) {
         const responseData = await response.json();
         console.log('✅ Room request submitted successfully:', responseData);
+        console.log('📊 Response data structure:', {
+          success: responseData.success,
+          data: responseData.data,
+          message: responseData.message
+        });
         
         // Small delay to ensure database is updated
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
+        console.log('🔄 About to fetch my request after submission...');
         // Force refresh the request data
-        await fetchMyRequest();
+        // Immediately refresh all data to show the new request
+        console.log('🔄 Refreshing data after successful submission...');
+        await fetchAllData();
+        
+        // Force another refresh after a short delay to ensure data is updated
+        setTimeout(async () => {
+          console.log('🔄 Final refresh after submission...');
+          await fetchAllData();
+        }, 2000);
         showNotification(`Room request for Room ${room.room_number} submitted successfully! Monthly rent: ₹${room.price}/month. You will be notified once approved and payment details will be sent to you and your parents.`, 'success', 6000);
       } else {
         let errorMessage = 'Request submission failed';
@@ -250,16 +357,29 @@ const StudentRoomRequest = () => {
   const confirmCancelRequest = async () => {
     if (!requestToCancel) return;
 
+    // Handle dummy requests specially
+    if (requestToCancel === 'dummy-request-id') {
+      showNotification('This is a test request and cannot be cancelled. Please submit a real room request to test cancellation.', 'info');
+      setShowCancelModal(false);
+      return;
+    }
+
+    console.log('🔄 Starting request cancellation for ID:', requestToCancel);
     setIsSubmitting(true);
     setShowCancelModal(false);
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) {
+        console.log('❌ No session found for cancellation');
+        return;
+      }
 
-      // Delete the request from database instead of just marking as cancelled
+      // Try DELETE first, fallback to PUT cancel if DELETE fails
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/room-allocation/request/${requestToCancel}`, {
+      console.log('📡 Sending DELETE request to:', `${API_BASE_URL}/api/room-allocation/request/${requestToCancel}`);
+      
+      let response = await fetch(`${API_BASE_URL}/api/room-allocation/request/${requestToCancel}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -267,16 +387,58 @@ const StudentRoomRequest = () => {
         },
       });
 
+      // If DELETE fails, try PUT cancel as fallback
+      if (!response.ok) {
+        console.log('⚠️ DELETE failed, trying PUT cancel as fallback...');
+        response = await fetch(`${API_BASE_URL}/api/room-allocation/request/${requestToCancel}/cancel`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+      }
+
+      console.log('📊 DELETE response status:', response.status);
+      
       if (response.ok) {
-        console.log('Request deleted successfully from database');
+        const responseData = await response.json();
+        console.log('✅ Request deleted successfully from database:', responseData);
+        
         // Clear the request from local state immediately since it's deleted
         setMyRequest(null);
+        
+        // Clear all data to force a complete refresh
+        setRooms([]);
+        setMyAllocation(null);
+        
+        // Reset request status to reflect no request
+        setRequestStatus('none');
+        setCanSubmitNewRequest(true);
+        setRequestMessage('');
+        
+        // Small delay to ensure database is updated
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        console.log('🔄 About to fetch my request after deletion...');
         // Force a fresh fetch to ensure UI is updated
         await fetchMyRequest();
-        showNotification('Your room request has been successfully cancelled and removed from our system.', 'cancelled', 5000);
+        
+        console.log('🔄 About to fetch all data after deletion...');
+        // Also refresh all data to update status cards
+        await fetchAllData();
+        showNotification('Your room request has been successfully cancelled.', 'success', 3000);
       } else {
-        const error = await response.json();
-        showNotification(error.message || 'Unable to cancel your room request at this time. Please try again or contact support if the issue persists.', 'error');
+        let errorMessage = 'Unable to cancel your room request at this time. Please try again or contact support if the issue persists.';
+        try {
+          const errorData = await response.json();
+          console.error('❌ DELETE request failed:', response.status, errorData);
+          errorMessage = errorData.message || errorData.error || errorMessage;
+        } catch (parseError) {
+          console.error('❌ Failed to parse error response:', parseError);
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        showNotification(errorMessage, 'error');
       }
     } catch (error) {
       console.error('Error cancelling request:', error);
@@ -354,6 +516,96 @@ const StudentRoomRequest = () => {
         </div>
       </div>
 
+      {/* Room Allocation Display - Show when student has confirmed allocation */}
+      {myAllocation && myAllocation.allocation_status === 'confirmed' ? (
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-slate-800">My Room Allocation</h2>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleManualRefresh}
+                className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center space-x-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+          
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-green-800">Room Allocated Successfully!</h3>
+                <p className="text-green-600">Your room request has been approved and allocated.</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white rounded-lg p-4 border border-green-100">
+                <h4 className="font-medium text-slate-800 mb-2">Room Details</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Room Number:</span>
+                    <span className="font-medium">{myAllocation.room_number || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Floor:</span>
+                    <span className="font-medium">{myAllocation.floor || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Room Type:</span>
+                    <span className="font-medium capitalize">{myAllocation.room_type || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Monthly Rent:</span>
+                    <span className="font-medium">₹{myAllocation.monthly_rent || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-white rounded-lg p-4 border border-green-100">
+                <h4 className="font-medium text-slate-800 mb-2">Allocation Details</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Status:</span>
+                    <span className="font-medium text-green-600 capitalize">{myAllocation.allocation_status}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Allocated Date:</span>
+                    <span className="font-medium">{myAllocation.allocated_at ? new Date(myAllocation.allocated_at).toLocaleDateString() : 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Valid Until:</span>
+                    <span className="font-medium">{myAllocation.valid_until ? new Date(myAllocation.valid_until).toLocaleDateString() : 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start space-x-3">
+                <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <h4 className="font-medium text-blue-800 mb-1">Important Information</h4>
+                  <p className="text-blue-700 text-sm">
+                    Your room allocation is confirmed. Please contact the hostel administration for any queries regarding your allocated room.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* Current Status */}
       {myRequest ? (
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
@@ -392,21 +644,56 @@ const StudentRoomRequest = () => {
                 {myRequest.preferred_floor && (
                   <p><span className="font-medium">Preferred Floor:</span> {myRequest.preferred_floor}</p>
                 )}
+                <p>
+                  <span className="font-medium">Room Number:</span> 
+                  <span className={`ml-2 px-2 py-1 rounded-full text-sm ${
+                    myRequest.status === 'allocated' && myRequest.rooms 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {myRequest.status === 'allocated' && myRequest.rooms 
+                      ? myRequest.rooms.room_number 
+                      : 'Not Assigned'}
+                  </span>
+                </p>
               </div>
             </div>
             
             {myRequest.status === 'allocated' && myRequest.rooms ? (
-              <div>
-                <h3 className="text-lg font-medium text-slate-700 mb-2">Allocated Room</h3>
-                <div className="space-y-2">
-                  <p><span className="font-medium">Room Number:</span> {myRequest.rooms.room_number}</p>
-                  <p><span className="font-medium">Floor:</span> {myRequest.rooms.floor}</p>
-                  <p><span className="font-medium">Type:</span> {myRequest.rooms.room_type}</p>
-                  <p><span className="font-medium">Price:</span> ${myRequest.rooms.price}/month</p>
-                  {myRequest.allocated_at && (
-                    <p><span className="font-medium">Allocated:</span> {new Date(myRequest.allocated_at).toLocaleDateString()}</p>
-                  )}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h3 className="text-lg font-medium text-green-800 mb-3 flex items-center">
+                  <div className="w-6 h-6 bg-green-100 text-green-600 rounded-lg flex items-center justify-center mr-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
+                    </svg>
+                  </div>
+                  Room Allocated Successfully!
+                </h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="font-medium text-green-700">Room Number:</span>
+                    <p className="text-green-900 font-semibold">{myRequest.rooms.room_number}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-green-700">Floor:</span>
+                    <p className="text-green-900">{myRequest.rooms.floor}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-green-700">Type:</span>
+                    <p className="text-green-900">{myRequest.rooms.room_type}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-green-700">Price:</span>
+                    <p className="text-green-900">${myRequest.rooms.price}/month</p>
+                  </div>
                 </div>
+                {myRequest.allocated_at && (
+                  <div className="mt-3 pt-3 border-t border-green-200">
+                    <span className="font-medium text-green-700">Allocated:</span>
+                    <p className="text-green-900">{new Date(myRequest.allocated_at).toLocaleDateString()}</p>
+                  </div>
+                )}
               </div>
             ) : myRequest.status === 'pending' ? (
               <div>
@@ -460,16 +747,96 @@ const StudentRoomRequest = () => {
         <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-slate-800">My Room Request</h2>
-            <button
-              onClick={fetchMyRequest}
-              disabled={isSubmitting}
-              className="px-3 py-1 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span>Refresh</span>
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={fetchMyRequest}
+                disabled={isSubmitting}
+                className="px-3 py-1 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Refresh</span>
+              </button>
+              <button
+                onClick={() => {
+                  console.log('🔍 Current myRequest state:', myRequest);
+                  console.log('🔍 Forcing complete data refresh...');
+                  fetchAllData();
+                }}
+                className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Force Refresh</span>
+              </button>
+              <button
+                onClick={async () => {
+                  console.log('🔍 DEBUG: Testing API endpoint directly...');
+                  const { data: { session } } = await supabase.auth.getSession();
+                  if (session) {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+                    const response = await fetch(`${API_BASE_URL}/api/room-requests/my-requests`, {
+                      headers: {
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'Content-Type': 'application/json',
+                      },
+                    });
+                    const result = await response.json();
+                    console.log('🔍 DEBUG: Direct API call result:', {
+                      status: response.status,
+                      data: result
+                    });
+                  } else {
+                    console.log('🔍 DEBUG: No session found');
+                  }
+                }}
+                className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1"
+              >
+                <span>Test API</span>
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+                    const response = await fetch(`${API_BASE_URL}/api/room-requests/test-db`, {
+                      headers: {
+                        'Authorization': `Bearer ${session?.access_token}`,
+                        'Content-Type': 'application/json',
+                      },
+                    });
+                    const data = await response.json();
+                    console.log('🔍 TEST DB ENDPOINT RESULT:', data);
+                  } catch (error) {
+                    console.error('🔍 TEST DB ERROR:', error);
+                  }
+                }}
+                className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1 ml-2"
+              >
+                <span>Test DB</span>
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+                    const response = await fetch(`${API_BASE_URL}/api/room-requests/test-all`, {
+                      headers: {
+                        'Authorization': `Bearer ${session?.access_token}`,
+                        'Content-Type': 'application/json',
+                      },
+                    });
+                    const data = await response.json();
+                    console.log('🔍 TEST ALL ENDPOINT RESULT:', data);
+                  } catch (error) {
+                    console.error('🔍 TEST ALL ERROR:', error);
+                  }
+                }}
+                className="px-3 py-1 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1 ml-2"
+              >
+                <span>Test All</span>
+              </button>
+            </div>
           </div>
           <div className="text-center py-8">
             <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -477,11 +844,31 @@ const StudentRoomRequest = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <h3 className="text-lg font-medium text-slate-800 mb-2">No Room Request Found</h3>
-            <p className="text-slate-600 mb-6">You haven't submitted any room requests yet. Browse available rooms below to get started.</p>
+            <h3 className="text-lg font-medium text-slate-800 mb-2">
+              {requestStatus === 'none' ? 'No Room Request Found' : 
+               requestStatus === 'pending' ? 'Room Request Pending' :
+               requestStatus === 'rejected' ? 'Previous Request Rejected' :
+               requestStatus === 'allocated' ? 'Room Allocated' :
+               'Room Request Status'}
+            </h3>
+            <p className="text-slate-600 mb-6">
+              {requestStatus === 'none' ? 'You haven\'t submitted any room requests yet. Browse available rooms below to get started.' :
+               requestMessage || 'Check your room request status below.'}
+            </p>
             <button
-              onClick={() => setActiveTab('rooms')}
-              className="px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors flex items-center space-x-2 mx-auto"
+              onClick={() => {
+                if (!canSubmitNewRequest) {
+                  showNotification(requestMessage, 'error');
+                  return;
+                }
+                setActiveTab('rooms');
+              }}
+              disabled={!canSubmitNewRequest}
+              className={`px-6 py-3 rounded-lg transition-colors flex items-center space-x-2 mx-auto ${
+                !canSubmitNewRequest
+                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                  : 'bg-amber-600 text-white hover:bg-amber-700'
+              }`}
             >
               <Eye className="w-4 h-4" />
               <span>Browse Available Rooms</span>
@@ -489,21 +876,36 @@ const StudentRoomRequest = () => {
           </div>
         </div>
       )}
+        </>
+      )}
 
       {/* Quick Actions */}
       <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
         <h2 className="text-xl font-semibold text-slate-800 mb-6">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button
-            onClick={() => setActiveTab('rooms')}
-            className="flex items-center space-x-3 p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+            onClick={() => {
+              if (!canSubmitNewRequest) {
+                showNotification(requestMessage, 'error');
+                return;
+              }
+              setActiveTab('rooms');
+            }}
+            disabled={!canSubmitNewRequest}
+            className={`flex items-center space-x-3 p-4 rounded-xl transition-colors ${
+              !canSubmitNewRequest
+                ? 'bg-gray-100 cursor-not-allowed'
+                : 'bg-blue-50 hover:bg-blue-100'
+            }`}
           >
-            <Eye className="w-5 h-5 text-blue-600" />
-            <span className="font-medium text-blue-800">Browse Available Rooms</span>
+            <Eye className={`w-5 h-5 ${!canSubmitNewRequest ? 'text-gray-400' : 'text-blue-600'}`} />
+            <span className={`font-medium ${!canSubmitNewRequest ? 'text-gray-500' : 'text-blue-800'}`}>
+              Browse Available Rooms
+            </span>
           </button>
           
           <button
-            onClick={fetchAllData}
+            onClick={handleManualRefresh}
             className="flex items-center space-x-3 p-4 bg-green-50 hover:bg-green-100 rounded-xl transition-colors"
           >
             <RefreshCw className="w-5 h-5 text-green-600" />
@@ -639,53 +1041,22 @@ const StudentRoomRequest = () => {
             <div className="mt-4 pt-4 border-t border-slate-200">
               {(() => {
                 const actualOccupancy = Math.max(room.current_occupancy || 0, room.occupied || 0);
-                const isAvailable = actualOccupancy < room.capacity && room.status !== 'full' && room.status !== 'maintenance';
-                
-                if (myRequest) {
-                  return (
-                    <div className="text-center py-3 space-y-3">
-                      <div className="flex items-center justify-center space-x-2 text-amber-600">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                        <span className="text-sm font-medium">You have a pending request</span>
-                      </div>
-                      <p className="text-xs text-slate-500">Cancel your current request to request this room</p>
-                      <button
-                        onClick={() => handleCancelRequest(myRequest.id)}
-                        disabled={isSubmitting}
-                        className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 text-xs font-medium"
-                      >
-                        {isSubmitting ? 'Cancelling...' : 'Cancel Request'}
-                      </button>
-                    </div>
-                  );
-                }
-                
-                return isAvailable;
-              })() ? (
+                return actualOccupancy < room.capacity && room.status !== 'full' && room.status !== 'maintenance';
+              })() && (!myRequest || !['pending', 'waitlisted', 'allocated'].includes(myRequest.status)) ? (
                 <button
                   onClick={() => handleRequestRoom(room)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting && loadingRoomId === room.id}
                   className={`w-full px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center justify-center space-x-2 ${
-                    isSubmitting
-                      ? loadingRoomId === room.id 
-                        ? 'bg-amber-400 text-white cursor-not-allowed'
-                        : 'bg-gray-400 text-white cursor-not-allowed'
+                    isSubmitting && loadingRoomId === room.id
+                      ? 'bg-amber-400 text-white cursor-not-allowed'
                       : 'bg-amber-600 text-white hover:bg-amber-700'
                   }`}
                 >
-                  {isSubmitting ? (
-                    loadingRoomId === room.id ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        <span>Requesting...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Please wait...</span>
-                      </>
-                    )
+                  {isSubmitting && loadingRoomId === room.id ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Requesting...</span>
+                    </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
@@ -693,9 +1064,9 @@ const StudentRoomRequest = () => {
                     </>
                   )}
                 </button>
-              ) : myRequest ? (
+              ) : !canSubmitNewRequest ? (
                 <div className="text-center py-2">
-                  <p className="text-sm text-slate-500">You already have a pending request</p>
+                  <p className="text-sm text-slate-500">{requestMessage}</p>
                 </div>
               ) : (
                 <div className="text-center py-2">
@@ -712,7 +1083,8 @@ const StudentRoomRequest = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
-    { id: 'rooms', label: 'Available Rooms', icon: Building2 }
+    ...(myAllocation && myAllocation.allocation_status === 'confirmed' ? [] : 
+        [{ id: 'rooms', label: 'Available Rooms', icon: Building2 }])
   ];
 
 
@@ -749,7 +1121,7 @@ const StudentRoomRequest = () => {
         </div>
         <div className="flex items-center space-x-3">
           <button
-            onClick={fetchAllData}
+            onClick={handleManualRefresh}
             className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
