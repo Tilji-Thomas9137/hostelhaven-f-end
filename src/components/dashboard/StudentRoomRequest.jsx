@@ -491,7 +491,7 @@ const StudentRoomRequest = () => {
                 {myRequest?.status || 'No Request'}
               </p>
               <p className="text-sm text-slate-600">
-                {myRequest ? `Priority: ${myRequest.priority_score || 0}` : 'Submit a request'}
+                {myRequest ? 'Request submitted' : 'Submit a request'}
               </p>
             </div>
           </div>
@@ -637,7 +637,6 @@ const StudentRoomRequest = () => {
                   </span>
                 </p>
                 <p><span className="font-medium">Requested:</span> {new Date(myRequest.requested_at).toLocaleDateString()}</p>
-                <p><span className="font-medium">Priority Score:</span> {myRequest.priority_score || 0}</p>
                 {myRequest.preferred_room_type && (
                   <p><span className="font-medium">Preferred Type:</span> {myRequest.preferred_room_type}</p>
                 )}
@@ -649,11 +648,26 @@ const StudentRoomRequest = () => {
                   <span className={`ml-2 px-2 py-1 rounded-full text-sm ${
                     myRequest.status === 'allocated' && myRequest.rooms 
                       ? 'bg-green-100 text-green-800' 
-                      : 'bg-gray-100 text-gray-600'
+                      : 'bg-blue-100 text-blue-800'
                   }`}>
                     {myRequest.status === 'allocated' && myRequest.rooms 
                       ? myRequest.rooms.room_number 
-                      : 'Not Assigned'}
+                      : (() => {
+                          // Extract requested room number from special_requirements
+                          if (myRequest.special_requirements) {
+                            console.log('🔍 Debug: special_requirements:', myRequest.special_requirements);
+                            console.log('🔍 Debug: available rooms:', rooms.map(r => ({ id: r.id, room_number: r.room_number })));
+                            const match = myRequest.special_requirements.match(/REQUESTED_ROOM_ID:([a-f0-9-]+)/i);
+                            if (match) {
+                              const requestedRoomId = match[1];
+                              console.log('🔍 Debug: extracted room ID:', requestedRoomId);
+                              const requestedRoom = rooms.find(room => room.id.toString() === requestedRoomId);
+                              console.log('🔍 Debug: found room:', requestedRoom);
+                              return requestedRoom ? requestedRoom.room_number : 'Room Requested';
+                            }
+                          }
+                          return 'Room Requested';
+                        })()}
                   </span>
                 </p>
               </div>
@@ -757,84 +771,6 @@ const StudentRoomRequest = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 <span>Refresh</span>
-              </button>
-              <button
-                onClick={() => {
-                  console.log('🔍 Current myRequest state:', myRequest);
-                  console.log('🔍 Forcing complete data refresh...');
-                  fetchAllData();
-                }}
-                className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                <span>Force Refresh</span>
-              </button>
-              <button
-                onClick={async () => {
-                  console.log('🔍 DEBUG: Testing API endpoint directly...');
-                  const { data: { session } } = await supabase.auth.getSession();
-                  if (session) {
-                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-                    const response = await fetch(`${API_BASE_URL}/api/room-requests/my-requests`, {
-                      headers: {
-                        'Authorization': `Bearer ${session.access_token}`,
-                        'Content-Type': 'application/json',
-                      },
-                    });
-                    const result = await response.json();
-                    console.log('🔍 DEBUG: Direct API call result:', {
-                      status: response.status,
-                      data: result
-                    });
-                  } else {
-                    console.log('🔍 DEBUG: No session found');
-                  }
-                }}
-                className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1"
-              >
-                <span>Test API</span>
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-                    const response = await fetch(`${API_BASE_URL}/api/room-requests/test-db`, {
-                      headers: {
-                        'Authorization': `Bearer ${session?.access_token}`,
-                        'Content-Type': 'application/json',
-                      },
-                    });
-                    const data = await response.json();
-                    console.log('🔍 TEST DB ENDPOINT RESULT:', data);
-                  } catch (error) {
-                    console.error('🔍 TEST DB ERROR:', error);
-                  }
-                }}
-                className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1 ml-2"
-              >
-                <span>Test DB</span>
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-                    const response = await fetch(`${API_BASE_URL}/api/room-requests/test-all`, {
-                      headers: {
-                        'Authorization': `Bearer ${session?.access_token}`,
-                        'Content-Type': 'application/json',
-                      },
-                    });
-                    const data = await response.json();
-                    console.log('🔍 TEST ALL ENDPOINT RESULT:', data);
-                  } catch (error) {
-                    console.error('🔍 TEST ALL ERROR:', error);
-                  }
-                }}
-                className="px-3 py-1 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm flex items-center space-x-1 ml-2"
-              >
-                <span>Test All</span>
               </button>
             </div>
           </div>

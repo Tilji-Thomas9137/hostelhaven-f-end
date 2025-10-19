@@ -3541,6 +3541,7 @@ const AdminDashboard = () => {
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Requested Room</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Preferred Type</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Preferred Floor</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Priority</th>
@@ -3572,6 +3573,22 @@ const AdminDashboard = () => {
                         </p>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                    <span className="font-medium text-blue-600">
+                      {(() => {
+                        // Extract requested room number from special_requirements
+                        if (request.special_requirements) {
+                          const match = request.special_requirements.match(/REQUESTED_ROOM_ID:([a-f0-9-]+)/i);
+                          if (match) {
+                            const requestedRoomId = match[1];
+                            const requestedRoom = rooms.find(room => room.id.toString() === requestedRoomId);
+                            return requestedRoom ? `Room ${requestedRoom.room_number}` : 'Room Requested';
+                          }
+                        }
+                        return 'Not Specified';
+                      })()}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900 capitalize">
                     {request.preferred_room_type || 'Any'}
@@ -3637,7 +3654,7 @@ const AdminDashboard = () => {
               ))}
               {roomRequests.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-slate-500">No room requests found</td>
+                  <td colSpan="8" className="px-6 py-12 text-center text-slate-500">No room requests found</td>
                 </tr>
               )}
             </tbody>

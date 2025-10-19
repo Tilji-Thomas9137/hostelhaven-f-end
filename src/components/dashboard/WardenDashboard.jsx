@@ -19,7 +19,9 @@ import {
   Plus,
   Trash2,
   Activity,
-  CheckCircle
+  CheckCircle,
+  RefreshCw,
+  X
 } from 'lucide-react';
 import ChatWidget from '../ui/ChatWidget';
 
@@ -431,23 +433,221 @@ const WardenDashboard = () => {
     </div>
   );
 
-  const renderRoomRequests = () => (
-    <div className="space-y-8">
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-        <h2 className="text-xl font-semibold text-slate-800 mb-6">Pending Room Requests</h2>
-        <div className="text-center py-12">
-          <Building2 className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-slate-800 mb-2">Room Request Management</h3>
-          <p className="text-slate-600 mb-4">
-            Manage student room allocation requests. Approve or reject requests based on availability and student needs.
-          </p>
-          <button className="px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors">
-            View Pending Requests
-          </button>
+  const renderRoomRequests = () => {
+    const [roomRequests, setRoomRequests] = useState([]);
+    const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+    const [rooms, setRooms] = useState([]);
+
+    useEffect(() => {
+      fetchRoomRequests();
+      fetchRooms();
+    }, []);
+
+    const fetchRoomRequests = async () => {
+      setIsLoadingRequests(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+        const response = await fetch(`${API_BASE_URL}/api/room-requests/pending`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          setRoomRequests(result.data?.requests || []);
+        }
+      } catch (error) {
+        console.error('Error fetching room requests:', error);
+      } finally {
+        setIsLoadingRequests(false);
+      }
+    };
+
+    const fetchRooms = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+        const response = await fetch(`${API_BASE_URL}/api/room-allocation/rooms`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          setRooms(result.data?.rooms || []);
+        }
+      } catch (error) {
+        console.error('Error fetching rooms:', error);
+      }
+    };
+
+    const handleApproveRequest = async (requestId) => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+        const response = await fetch(`${API_BASE_URL}/api/room-requests/${requestId}/approve`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          fetchRoomRequests(); // Refresh the list
+        }
+      } catch (error) {
+        console.error('Error approving request:', error);
+      }
+    };
+
+    const handleRejectRequest = async (requestId) => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+        const response = await fetch(`${API_BASE_URL}/api/room-requests/${requestId}/reject`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          fetchRoomRequests(); // Refresh the list
+        }
+      } catch (error) {
+        console.error('Error rejecting request:', error);
+      }
+    };
+
+    const getRequestedRoomNumber = (request) => {
+      if (request.special_requirements) {
+        const match = request.special_requirements.match(/REQUESTED_ROOM_ID:([a-f0-9-]+)/i);
+        if (match) {
+          const requestedRoomId = match[1];
+          const requestedRoom = rooms.find(room => room.id.toString() === requestedRoomId);
+          return requestedRoom ? requestedRoom.room_number : 'Unknown';
+        }
+      }
+      return 'Not Specified';
+    };
+
+    return (
+      <div className="space-y-8">
+        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-slate-800">Pending Room Requests</h2>
+            <button 
+              onClick={fetchRoomRequests}
+              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors flex items-center space-x-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Refresh</span>
+            </button>
+          </div>
+          
+          {isLoadingRequests ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto mb-4"></div>
+              <p className="text-slate-600">Loading room requests...</p>
+            </div>
+          ) : roomRequests.length === 0 ? (
+            <div className="text-center py-12">
+              <Building2 className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-slate-800 mb-2">No Pending Requests</h3>
+              <p className="text-slate-600">All room requests have been processed.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {roomRequests.map((request) => (
+                <div key={request.id} className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <h3 className="text-lg font-semibold text-slate-800">
+                          {request.student?.full_name || 'Unknown Student'}
+                        </h3>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          {request.status}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <p className="text-sm text-slate-600">Student ID:</p>
+                          <p className="font-medium text-slate-800">{request.student?.admission_number || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-600">Email:</p>
+                          <p className="font-medium text-slate-800">{request.student?.email || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-600">Requested Room:</p>
+                          <p className="font-medium text-blue-600">{getRequestedRoomNumber(request)}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-600">Preferred Type:</p>
+                          <p className="font-medium text-slate-800 capitalize">{request.preferred_room_type || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-600">Preferred Floor:</p>
+                          <p className="font-medium text-slate-800">{request.preferred_floor || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-slate-600">Request Date:</p>
+                          <p className="font-medium text-slate-800">
+                            {new Date(request.requested_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {request.special_requirements && (
+                        <div className="mt-3">
+                          <p className="text-sm text-slate-600">Special Requirements:</p>
+                          <p className="text-sm text-slate-800">{request.special_requirements}</p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex flex-col space-y-2 ml-4">
+                      <button
+                        onClick={() => handleApproveRequest(request.id)}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        <span>Approve</span>
+                      </button>
+                      <button
+                        onClick={() => handleRejectRequest(request.id)}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2"
+                      >
+                        <X className="w-4 h-4" />
+                        <span>Reject</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderContent = () => {
     switch (activeTab) {
