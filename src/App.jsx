@@ -23,6 +23,8 @@ import QRVerification from './components/QRVerification';
 import StudentCleaningRequest from './components/StudentCleaningRequest';
 import CleaningManagement from './components/CleaningManagement';
 import RouteGuard from './components/RouteGuard';
+import DebugLogin from './components/DebugLogin';
+import DebugRoomRequests from './components/DebugRoomRequests';
 import { NotificationProvider } from './contexts/NotificationContext';
 import './App.css';
 
@@ -62,6 +64,8 @@ const AppContent = () => {
         <Route path="/staff/qr-verification" element={<QRVerification />} />
         <Route path="/student/cleaning-request" element={<StudentCleaningRequest />} />
         <Route path="/staff/cleaning-management" element={<CleaningManagement />} />
+        <Route path="/debug-login" element={<DebugLogin />} />
+        <Route path="/debug-room-requests" element={<DebugRoomRequests />} />
       </Routes>
     </div>
   );

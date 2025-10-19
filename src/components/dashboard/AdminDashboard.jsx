@@ -41,6 +41,8 @@ import {
   Star
 } from 'lucide-react';
 import ChatWidget from '../ui/ChatWidget';
+import AdminCleaningAnalytics from '../AdminCleaningAnalytics';
+import AdminRoomAnalytics from '../AdminRoomAnalytics';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -2528,6 +2530,8 @@ const AdminDashboard = () => {
     { id: 'overview', label: 'Overview', icon: Home },
     { id: 'students', label: 'Student Management', icon: Users },
     { id: 'rooms-allocations', label: 'Rooms & Allocations', icon: Building2 },
+    { id: 'cleaning', label: 'Cleaning Analytics', icon: Activity },
+    { id: 'room-analytics', label: 'Room Analytics', icon: Building2 },
     { id: 'complaints', label: 'Complaints', icon: AlertCircle },
     { id: 'leave', label: 'Leave Requests', icon: Calendar },
     { id: 'payments', label: 'Payments', icon: CreditCard },
@@ -5197,6 +5201,10 @@ const AdminDashboard = () => {
         return renderHostelSettings();
       case 'rooms-allocations':
         return renderRoomsAllocations();
+      case 'cleaning':
+        return <AdminCleaningAnalytics />;
+      case 'room-analytics':
+        return <AdminRoomAnalytics />;
       case 'complaints':
         return renderComplaints();
       case 'leave':

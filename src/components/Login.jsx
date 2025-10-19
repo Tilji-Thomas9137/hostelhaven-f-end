@@ -113,6 +113,7 @@ const Login = () => {
 
       // Navigate based on user role
       const dashboardPath = getDashboardPath(user.role);
+      console.log('🔍 Login: User role:', user.role, 'Dashboard path:', dashboardPath);
       navigate(dashboardPath);
     } catch (error) {
       console.error('Unexpected login error:', error);

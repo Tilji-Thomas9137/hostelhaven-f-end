@@ -85,6 +85,7 @@ const RouteGuard = ({ children, requiredRole = null }) => {
             // Check role authorization if required
             if (requiredRole && result.data.user.role !== requiredRole) {
               console.log('❌ RouteGuard: Role mismatch. Required:', requiredRole, 'User role:', result.data.user.role);
+              console.log('🔍 RouteGuard: Full user data:', result.data.user);
               setIsAuthorized(false);
               setIsLoading(false);
               clearTimeout(timeoutId);

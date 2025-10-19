@@ -37,22 +37,36 @@ const CleaningManagement = () => {
 
   const fetchRequests = async () => {
     try {
+      console.log('🔍 CleaningManagement: Starting to fetch requests...');
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) {
+        console.log('❌ CleaningManagement: No session found');
+        return;
+      }
 
-      const response = await fetch('http://localhost:3002/api/cleaning-management/requests', {
+      console.log('✅ CleaningManagement: Session found, making API request...');
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/all`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
 
+      console.log('📡 CleaningManagement: API response status:', response.status);
       const result = await response.json();
+      console.log('📡 CleaningManagement: API response:', result);
+
       if (response.ok && result.success) {
+        console.log('✅ CleaningManagement: Successfully fetched requests:', result.data.requests?.length || 0);
         setRequests(result.data.requests || []);
+      } else {
+        console.error('❌ CleaningManagement: Error fetching requests:', result.message);
+        showNotification(result.message || 'Failed to fetch cleaning requests', 'error');
       }
     } catch (error) {
-      console.error('Error fetching requests:', error);
+      console.error('❌ CleaningManagement: Exception while fetching requests:', error);
+      showNotification('Failed to fetch cleaning requests', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -63,7 +77,8 @@ const CleaningManagement = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:3002/api/cleaning-management/staff', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/cleaning-management/staff`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -73,9 +88,13 @@ const CleaningManagement = () => {
       const result = await response.json();
       if (response.ok && result.success) {
         setStaff(result.data.staff || []);
+      } else {
+        console.error('Error fetching staff:', result.message);
+        // Don't show error notification for staff fetch as it's not critical
       }
     } catch (error) {
       console.error('Error fetching staff:', error);
+      // Don't show error notification for staff fetch as it's not critical
     }
   };
 
@@ -84,7 +103,8 @@ const CleaningManagement = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:3002/api/cleaning-management/stats', {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/cleaning-management/stats`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -97,6 +117,106 @@ const CleaningManagement = () => {
       }
     } catch (error) {
       console.error('Error fetching stats:', error);
+    }
+  };
+
+  const handleApproveRequest = async (requestId) => {
+    try {
+      setIsUpdating(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/${requestId}/approve`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          notes: 'Request approved by staff'
+        }),
+      });
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        showNotification(result.message || 'Cleaning request approved successfully!', 'success');
+        fetchRequests(); // Refresh the list
+      } else {
+        throw new Error(result.message || 'Failed to approve cleaning request');
+      }
+    } catch (error) {
+      console.error('Error approving request:', error);
+      showNotification(error.message || 'Failed to approve cleaning request', 'error');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleRejectRequest = async (requestId, reason) => {
+    try {
+      setIsUpdating(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/${requestId}/reject`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reason: reason || 'Request rejected by staff'
+        }),
+      });
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        showNotification(result.message || 'Cleaning request rejected successfully!', 'success');
+        fetchRequests(); // Refresh the list
+      } else {
+        throw new Error(result.message || 'Failed to reject cleaning request');
+      }
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      showNotification(error.message || 'Failed to reject cleaning request', 'error');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleUpdateStatus = async (requestId, newStatus) => {
+    try {
+      setIsUpdating(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/${requestId}/update-status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: newStatus,
+          notes: `Status updated to ${newStatus}`
+        }),
+      });
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        showNotification(result.message || `Status updated to ${newStatus} successfully!`, 'success');
+        fetchRequests(); // Refresh the list
+      } else {
+        throw new Error(result.message || 'Failed to update status');
+      }
+    } catch (error) {
+      console.error('Error updating status:', error);
+      showNotification(error.message || 'Failed to update status', 'error');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -135,41 +255,6 @@ const CleaningManagement = () => {
     }
   };
 
-  const handleUpdateStatus = async (requestId, status) => {
-    setIsUpdating(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('No active session');
-      }
-
-      const response = await fetch(`http://localhost:3002/api/cleaning-management/requests/${requestId}/status`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        showNotification(`Request ${status} successfully!`, 'success');
-        setShowStatusModal(false);
-        setSelectedRequest(null);
-        fetchRequests();
-        fetchStats();
-      } else {
-        throw new Error(result.message || 'Failed to update status');
-      }
-    } catch (error) {
-      console.error('Error updating status:', error);
-      showNotification(error.message || 'Failed to update status', 'error');
-    } finally {
-      setIsUpdating(false);
-    }
-  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -216,7 +301,7 @@ const CleaningManagement = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Cleaning Management</h2>
-          <p className="text-slate-600">Manage cleaning requests and assignments</p>
+          <p className="text-slate-600">Manage cleaning requests and assignments - Operations Assistant</p>
         </div>
         <button
           onClick={fetchRequests}
@@ -391,15 +476,60 @@ const CleaningManagement = () => {
 
                     <div className="flex flex-col space-y-2 ml-4">
                       {request.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => handleApproveRequest(request.id)}
+                            disabled={isUpdating}
+                            className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center space-x-1 disabled:opacity-50"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                            <span>Approve</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              const reason = prompt('Please provide a reason for rejection (optional):');
+                              if (reason !== null) { // User didn't cancel
+                                handleRejectRequest(request.id, reason);
+                              }
+                            }}
+                            disabled={isUpdating}
+                            className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm flex items-center space-x-1 disabled:opacity-50"
+                          >
+                            <AlertCircle className="w-4 h-4" />
+                            <span>Reject</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedRequest(request);
+                              setShowAssignModal(true);
+                            }}
+                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center space-x-1"
+                          >
+                            <UserCheck className="w-4 h-4" />
+                            <span>Assign</span>
+                          </button>
+                        </>
+                      )}
+
+                      {request.status === 'approved' && (
                         <button
-                          onClick={() => {
-                            setSelectedRequest(request);
-                            setShowAssignModal(true);
-                          }}
-                          className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center space-x-1"
+                          onClick={() => handleUpdateStatus(request.id, 'in_progress')}
+                          disabled={isUpdating}
+                          className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm flex items-center space-x-1 disabled:opacity-50"
                         >
-                          <UserCheck className="w-4 h-4" />
-                          <span>Assign</span>
+                          <RefreshCw className="w-4 h-4" />
+                          <span>Start Work</span>
+                        </button>
+                      )}
+
+                      {request.status === 'in_progress' && (
+                        <button
+                          onClick={() => handleUpdateStatus(request.id, 'completed')}
+                          disabled={isUpdating}
+                          className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center space-x-1 disabled:opacity-50"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          <span>Mark Complete</span>
                         </button>
                       )}
 
@@ -409,10 +539,10 @@ const CleaningManagement = () => {
                             setSelectedRequest(request);
                             setShowStatusModal(true);
                           }}
-                          className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center space-x-1"
+                          className="px-3 py-2 border border-amber-600 text-amber-600 rounded-lg hover:bg-amber-50 transition-colors text-sm flex items-center space-x-1"
                         >
-                          <CheckCircle className="w-4 h-4" />
-                          <span>Update</span>
+                          <RefreshCw className="w-4 h-4" />
+                          <span>Update Status</span>
                         </button>
                       )}
 

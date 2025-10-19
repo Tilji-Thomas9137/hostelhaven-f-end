@@ -26,5 +26,21 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     console.log('User signed out');
     // Clear any stored tokens
     localStorage.removeItem('supabase.auth.token');
+    // Redirect to login page if user was signed out due to token issues
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+  } else if (event === 'SIGNED_IN') {
+    console.log('User signed in successfully');
+  }
+})
+
+// Add global error handler for auth errors
+window.addEventListener('unhandledrejection', (event) => {
+  if (event.reason?.message?.includes('Invalid Refresh Token') || 
+      event.reason?.message?.includes('Refresh Token Not Found')) {
+    console.log('Auth token expired, redirecting to login');
+    localStorage.clear();
+    window.location.href = '/login';
   }
 }) 
