@@ -80,6 +80,19 @@ const StudentCleaningRequest = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      // Check if student has room allocation before allowing cleaning request
+      const roomCheckResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3002'}/api/student-cleaning-requests/check-room-allocation`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!roomCheckResponse.ok) {
+        const roomCheckResult = await roomCheckResponse.json();
+        throw new Error(roomCheckResult.message || 'You must have an allocated room to request cleaning services');
+      }
+
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
       const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests`, {
         method: 'POST',

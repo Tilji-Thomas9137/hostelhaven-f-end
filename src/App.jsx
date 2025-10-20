@@ -64,8 +64,7 @@ const AppContent = () => {
         <Route path="/staff/qr-verification" element={<QRVerification />} />
         <Route path="/student/cleaning-request" element={<StudentCleaningRequest />} />
         <Route path="/staff/cleaning-management" element={<CleaningManagement />} />
-        <Route path="/debug-login" element={<DebugLogin />} />
-        <Route path="/debug-room-requests" element={<DebugRoomRequests />} />
+        {/* Debug routes removed */}
       </Routes>
     </div>
   );

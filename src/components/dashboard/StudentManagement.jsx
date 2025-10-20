@@ -66,10 +66,6 @@ const StudentManagement = ({ data = [], onRefresh }) => {
         admission_number: formData.admission_number,
         course: formData.course,
         year: formData.year,
-        date_of_birth: formData.date_of_birth,
-        gender: formData.gender,
-        address: formData.address,
-        blood_group: formData.blood_group,
         student_email: formData.student_email,
         student_phone: formData.student_phone,
         parent_name: formData.parent_name,
@@ -130,6 +126,9 @@ const StudentManagement = ({ data = [], onRefresh }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      console.log('🔍 STUDENT MANAGEMENT: onSubmitEdit called with formData:', formData);
+      console.log('🔍 STUDENT MANAGEMENT: selectedStudent:', selectedStudent);
+
       const response = await fetch(`http://localhost:3002/api/admission-registry/students/${selectedStudent.admission_number}`, {
         method: 'PUT',
         headers: {
@@ -137,15 +136,14 @@ const StudentManagement = ({ data = [], onRefresh }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...formData,
-          date_of_birth: formData.date_of_birth,
-          gender: formData.gender,
-          address: formData.address,
-          blood_group: formData.blood_group
+          ...formData
         }),
       });
 
+      console.log('🔍 STUDENT MANAGEMENT: Edit API response status:', response.status);
       const result = await response.json();
+      console.log('🔍 STUDENT MANAGEMENT: Edit API response result:', result);
+      
       if (response.ok && result.success) {
         showNotification('Student updated successfully!', 'success');
         setShowEditModal(false);
@@ -153,6 +151,7 @@ const StudentManagement = ({ data = [], onRefresh }) => {
         reset();
         onRefresh();
       } else {
+        console.log('❌ STUDENT MANAGEMENT: Edit failed:', result);
         throw new Error(result.message || 'Failed to update student');
       }
     } catch (error) {
@@ -164,6 +163,8 @@ const StudentManagement = ({ data = [], onRefresh }) => {
 
   const handleDeleteClick = (student) => {
     const studentId = student.admission_number || student.id;
+    console.log('🔍 STUDENT MANAGEMENT: handleDeleteClick called with student:', student, 'studentId:', studentId);
+    
     if (!studentId || studentId.includes('mock') || studentId.includes('student-')) {
       showNotification('Cannot delete mock or test data', 'error');
       return;
@@ -173,11 +174,16 @@ const StudentManagement = ({ data = [], onRefresh }) => {
       isOpen: true,
       type: 'danger',
       title: 'Delete Student',
-      message: `Are you sure you want to delete ${student.student_name}? This action cannot be undone.`,
+      message: `Are you sure you want to delete ${student.student_name || student.full_name || student.name || 'this student'}? This action cannot be undone.`,
       onConfirm: async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) return;
+
+          console.log('🔍 STUDENT MANAGEMENT: Making API call to delete student:', {
+            url: `http://localhost:3002/api/admission-registry/students/${studentId}`,
+            studentId
+          });
 
           const response = await fetch(`http://localhost:3002/api/admission-registry/students/${studentId}`, {
             method: 'DELETE',
@@ -206,6 +212,8 @@ const StudentManagement = ({ data = [], onRefresh }) => {
   };
 
   const handleStatusToggle = (studentId, currentStatus) => {
+    console.log('🔍 STUDENT MANAGEMENT: handleStatusToggle called with:', { studentId, currentStatus });
+    
     // Determine new status based on current status
     let newStatus, action, type;
     if (currentStatus === 'active') {
@@ -225,7 +233,12 @@ const StudentManagement = ({ data = [], onRefresh }) => {
 
     // Find student name for better UX
     const student = students.find(s => s.id === studentId);
-    const studentName = student ? student.student_name : 'this student';
+    console.log('🔍 STUDENT MANAGEMENT: Found student:', student);
+    const studentName = student ? (student.student_name || student.full_name || student.name || 'this student') : 'this student';
+    
+    // Use admission_number for API calls, not the internal ID
+    const apiStudentId = student ? (student.admission_number || student.id) : studentId;
+    console.log('🔍 STUDENT MANAGEMENT: Using API student ID:', apiStudentId);
 
     setConfirmationModal({
       isOpen: true,
@@ -239,8 +252,14 @@ const StudentManagement = ({ data = [], onRefresh }) => {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) return;
 
+          console.log('🔍 STUDENT MANAGEMENT: Making API call to update status:', {
+            url: `http://localhost:3002/api/admission-registry/students/${apiStudentId}`,
+            apiStudentId,
+            newStatus
+          });
+
           // Update student status in the database
-          const response = await fetch(`http://localhost:3002/api/admission-registry/students/${student.admission_number}`, {
+          const response = await fetch(`http://localhost:3002/api/admission-registry/students/${apiStudentId}`, {
             method: 'PUT',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -248,6 +267,8 @@ const StudentManagement = ({ data = [], onRefresh }) => {
             },
             body: JSON.stringify({ status: newStatus }),
           });
+
+          console.log('🔍 STUDENT MANAGEMENT: API response status:', response.status);
 
           const result = await response.json();
           if (response.ok && result.success) {
@@ -525,67 +546,6 @@ const StudentManagement = ({ data = [], onRefresh }) => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Date of Birth
-                    </label>
-                    <input
-                      type="date"
-                      {...register('date_of_birth')}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Gender *
-                    </label>
-                    <select
-                      {...register('gender', { required: 'Gender is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Select gender</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
-                    {errors.gender && (
-                      <p className="text-red-600 text-sm mt-1">{errors.gender.message}</p>
-                    )}
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Address
-                    </label>
-                    <input
-                      type="text"
-                      {...register('address')}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Street, Area, Landmark"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Blood Group
-                    </label>
-                    <select
-                      {...register('blood_group')}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Select blood group</option>
-                      <option value="A+">A+</option>
-                      <option value="A-">A-</option>
-                      <option value="B+">B+</option>
-                      <option value="B-">B-</option>
-                      <option value="AB+">AB+</option>
-                      <option value="AB-">AB-</option>
-                      <option value="O+">O+</option>
-                      <option value="O-">O-</option>
-                    </select>
-                  </div>
-
-              <div>
                 <label className="block text-sm font-medium text-slate-600 mb-2">
                   Student Email *
                 </label>

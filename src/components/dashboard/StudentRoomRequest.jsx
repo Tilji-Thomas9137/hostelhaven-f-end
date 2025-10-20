@@ -132,7 +132,7 @@ const StudentRoomRequest = () => {
 
       console.log('Fetching available rooms...');
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/room-allocation/rooms`, {
+      const response = await fetch(`${API_BASE_URL}/api/rooms`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -144,7 +144,18 @@ const StudentRoomRequest = () => {
       if (response.ok) {
         const result = await response.json();
         console.log('Rooms data:', result);
-        setRooms(result.data?.rooms || []);
+        
+        // Filter rooms to only show available ones (not full capacity)
+        const availableRooms = (result.data?.rooms || []).filter(room => {
+          const isAvailable = room.current_occupancy < room.capacity && 
+                            room.status !== 'full' && 
+                            room.status !== 'maintenance';
+          console.log(`Room ${room.room_number}: capacity=${room.capacity}, occupancy=${room.current_occupancy}, status=${room.status}, available=${isAvailable}`);
+          return isAvailable;
+        });
+        
+        console.log('Available rooms after filtering:', availableRooms.length, 'out of', result.data?.rooms?.length || 0);
+        setRooms(availableRooms);
       } else {
         const errorText = await response.text();
         console.error('Failed to fetch rooms:', response.status, errorText);

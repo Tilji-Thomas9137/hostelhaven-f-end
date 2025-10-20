@@ -193,6 +193,11 @@ const AdminDashboard = () => {
   const [viewingUser, setViewingUser] = useState(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Debug modal state changes
+  useEffect(() => {
+    console.log('🔍 ADMIN DASHBOARD: Modal state changed - showUserModal:', showUserModal, 'viewingUser:', viewingUser);
+  }, [showUserModal, viewingUser]);
+
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -1687,13 +1692,16 @@ const AdminDashboard = () => {
   };
 
   const fetchUserDetails = async (userId) => {
+    console.log('🔍 ADMIN DASHBOARD: fetchUserDetails called with userId:', userId);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
+        console.log('❌ ADMIN DASHBOARD: No session found');
         showNotification('Please log in to view user details', 'error');
         return;
       }
 
+      console.log('🔍 ADMIN DASHBOARD: Making API request to:', `http://localhost:3002/api/admin/users/${userId}`);
       const response = await fetch(`http://localhost:3002/api/admin/users/${userId}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -1701,15 +1709,27 @@ const AdminDashboard = () => {
         },
       });
 
+      console.log('🔍 ADMIN DASHBOARD: API response status:', response.status);
       if (response.ok) {
         const result = await response.json();
+        console.log('🔍 ADMIN DASHBOARD: User details API response:', result);
         if (result.success && result.data && result.data.user) {
+          console.log('🔍 ADMIN DASHBOARD: User data received:', result.data.user);
+          console.log('🔍 ADMIN DASHBOARD: User profiles:', result.data.user.user_profiles);
+          console.log('🔍 ADMIN DASHBOARD: Parents:', result.data.user.parents);
+          console.log('🔍 ADMIN DASHBOARD: Rooms:', result.data.user.rooms);
+          console.log('🔍 ADMIN DASHBOARD: Room allocations:', result.data.user.room_allocations);
+          console.log('🔍 ADMIN DASHBOARD: Complete user object keys:', Object.keys(result.data.user));
+          console.log('🔍 ADMIN DASHBOARD: Setting viewingUser and showing modal');
           setViewingUser(result.data.user);
           setShowUserModal(true);
+          console.log('🔍 ADMIN DASHBOARD: Modal state set - showUserModal should be true');
         } else {
+          console.log('❌ ADMIN DASHBOARD: No user data in response');
           showNotification('User data not found', 'error');
         }
       } else {
+        console.log('❌ ADMIN DASHBOARD: API request failed with status:', response.status);
         if (response.status === 404) {
           showNotification('User not found', 'error');
         } else {
@@ -1724,7 +1744,7 @@ const AdminDashboard = () => {
         }
       }
     } catch (error) {
-      console.error('Error fetching user details:', error);
+      console.error('❌ ADMIN DASHBOARD: Error fetching user details:', error);
       showNotification('Network error: Failed to fetch user details', 'error');
     }
   };
@@ -5532,7 +5552,7 @@ const AdminDashboard = () => {
                     </div>
                     <div className="flex items-center space-x-2">
                       <Phone className="w-4 h-4 text-slate-400" />
-                      <span className="text-slate-900">{viewingUser.phone || 'Not provided'}</span>
+                      <span className="text-slate-900">{viewingUser.user_profiles?.phone_number || viewingUser.phone || 'Not provided'}</span>
                     </div>
                     <div className="flex items-start space-x-2">
                       <MapPin className="w-4 h-4 text-slate-400 mt-0.5" />
@@ -5549,6 +5569,47 @@ const AdminDashboard = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Parent Information */}
+                {viewingUser.role === 'student' && (
+                  <div className="space-y-4">
+                    <h5 className="text-lg font-medium text-slate-800">Parent Information</h5>
+                    {viewingUser.parents ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <User className="w-4 h-4 text-slate-400" />
+                          <span className="text-slate-900">{viewingUser.parents.parent_name || 'Not provided'}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Mail className="w-4 h-4 text-slate-400" />
+                          <span className="text-slate-900">{viewingUser.parents.parent_email || 'Not provided'}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Phone className="w-4 h-4 text-slate-400" />
+                          <span className="text-slate-900">{viewingUser.parents.parent_phone || 'Not provided'}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-slate-600 text-sm">Relation:</span>
+                          <span className="text-slate-900 text-sm">{viewingUser.parents.parent_relation || 'Not specified'}</span>
+                        </div>
+                        {viewingUser.parents.parent_occupation && (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-slate-600 text-sm">Occupation:</span>
+                            <span className="text-slate-900 text-sm">{viewingUser.parents.parent_occupation}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-4">
+                        <div className="w-16 h-16 mx-auto mb-3 bg-slate-200 rounded-full flex items-center justify-center">
+                          <User className="w-8 h-8 text-slate-400" />
+                        </div>
+                        <p className="text-slate-500 font-medium">No parent information</p>
+                        <p className="text-slate-400 text-sm">Parent details not provided</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Room & Hostel Info */}

@@ -510,24 +510,7 @@ const RoomRequestManagement = () => {
                 <RefreshCw className="w-5 h-5" />
                 <span className="font-medium">Refresh</span>
               </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-                    const response = await fetch(`${API_BASE_URL}/api/room-requests/debug-check`);
-                    const result = await response.json();
-                    console.log('🔍 DEBUG CHECK Result:', result);
-                    showNotification(`Debug check completed. Check console for details.`, 'success');
-                  } catch (error) {
-                    console.error('Debug check error:', error);
-                    showNotification('Debug check failed', 'error');
-                  }
-                }}
-                className="flex items-center space-x-2 px-4 py-3 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-xl hover:from-gray-600 hover:to-gray-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-              >
-                <AlertCircle className="w-4 h-4" />
-                <span className="font-medium">Debug</span>
-              </button>
+              {/* Debug button removed */}
             </div>
           </div>
         </div>
