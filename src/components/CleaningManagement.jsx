@@ -13,25 +13,25 @@ import {
   Search,
   Filter,
   Eye,
-  UserCheck,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 
 const CleaningManagement = () => {
   const { showNotification } = useNotification();
   const [requests, setRequests] = useState([]);
-  const [staff, setStaff] = useState([]);
   const [stats, setStats] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState(null);
-  const [showAssignModal, setShowAssignModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     fetchRequests();
-    fetchStaff();
     fetchStats();
   }, []);
 
@@ -46,7 +46,7 @@ const CleaningManagement = () => {
 
       console.log('✅ CleaningManagement: Session found, making API request...');
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/all`, {
+      const response = await fetch(`${API_BASE_URL}/api/cleaning-requests`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -60,6 +60,17 @@ const CleaningManagement = () => {
       if (response.ok && result.success) {
         console.log('✅ CleaningManagement: Successfully fetched requests:', result.data.requests?.length || 0);
         setRequests(result.data.requests || []);
+        
+        // Log each request's user data for debugging
+        result.data.requests?.forEach((request, index) => {
+          console.log(`🔍 CleaningManagement: Request ${index + 1} user data:`, {
+            student_id: request.student_id,
+            users: request.users,
+            admission_number: request.users?.admission_number,
+            full_name: request.users?.full_name,
+            email: request.users?.email
+          });
+        });
       } else {
         console.error('❌ CleaningManagement: Error fetching requests:', result.message);
         showNotification(result.message || 'Failed to fetch cleaning requests', 'error');
@@ -69,33 +80,15 @@ const CleaningManagement = () => {
       showNotification('Failed to fetch cleaning requests', 'error');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
-  const fetchStaff = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
 
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/cleaning-management/staff`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const result = await response.json();
-      if (response.ok && result.success) {
-        setStaff(result.data.staff || []);
-      } else {
-        console.error('Error fetching staff:', result.message);
-        // Don't show error notification for staff fetch as it's not critical
-      }
-    } catch (error) {
-      console.error('Error fetching staff:', error);
-      // Don't show error notification for staff fetch as it's not critical
-    }
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchRequests();
+    await fetchStats();
   };
 
   const fetchStats = async () => {
@@ -104,7 +97,7 @@ const CleaningManagement = () => {
       if (!session) return;
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/cleaning-management/stats`, {
+      const response = await fetch(`${API_BASE_URL}/api/cleaning-requests/stats`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -127,7 +120,7 @@ const CleaningManagement = () => {
       if (!session) return;
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/${requestId}/approve`, {
+      const response = await fetch(`${API_BASE_URL}/api/cleaning-requests/${requestId}/approve`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -142,6 +135,7 @@ const CleaningManagement = () => {
       if (response.ok && result.success) {
         showNotification(result.message || 'Cleaning request approved successfully!', 'success');
         fetchRequests(); // Refresh the list
+        fetchStats(); // Refresh stats
       } else {
         throw new Error(result.message || 'Failed to approve cleaning request');
       }
@@ -160,14 +154,14 @@ const CleaningManagement = () => {
       if (!session) return;
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/${requestId}/reject`, {
+      const response = await fetch(`${API_BASE_URL}/api/cleaning-requests/${requestId}/reject`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          reason: reason || 'Request rejected by staff'
+          notes: reason || 'Request rejected by staff'
         }),
       });
 
@@ -175,6 +169,7 @@ const CleaningManagement = () => {
       if (response.ok && result.success) {
         showNotification(result.message || 'Cleaning request rejected successfully!', 'success');
         fetchRequests(); // Refresh the list
+        fetchStats(); // Refresh stats
       } else {
         throw new Error(result.message || 'Failed to reject cleaning request');
       }
@@ -186,6 +181,15 @@ const CleaningManagement = () => {
     }
   };
 
+  const handleConfirmReject = () => {
+    if (selectedRequest) {
+      handleRejectRequest(selectedRequest.id, rejectReason);
+      setShowRejectModal(false);
+      setSelectedRequest(null);
+      setRejectReason('');
+    }
+  };
+
   const handleUpdateStatus = async (requestId, newStatus) => {
     try {
       setIsUpdating(true);
@@ -193,7 +197,7 @@ const CleaningManagement = () => {
       if (!session) return;
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/student-cleaning-requests/${requestId}/update-status`, {
+      const response = await fetch(`${API_BASE_URL}/api/cleaning-requests/${requestId}/status`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -209,6 +213,7 @@ const CleaningManagement = () => {
       if (response.ok && result.success) {
         showNotification(result.message || `Status updated to ${newStatus} successfully!`, 'success');
         fetchRequests(); // Refresh the list
+        fetchStats(); // Refresh stats
       } else {
         throw new Error(result.message || 'Failed to update status');
       }
@@ -220,40 +225,6 @@ const CleaningManagement = () => {
     }
   };
 
-  const handleAssignRequest = async (requestId, staffId) => {
-    setIsUpdating(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('No active session');
-      }
-
-      const response = await fetch(`http://localhost:3002/api/cleaning-management/requests/${requestId}/assign`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ assigned_to: staffId }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        showNotification('Request assigned successfully!', 'success');
-        setShowAssignModal(false);
-        setSelectedRequest(null);
-        fetchRequests();
-      } else {
-        throw new Error(result.message || 'Failed to assign request');
-      }
-    } catch (error) {
-      console.error('Error assigning request:', error);
-      showNotification(error.message || 'Failed to assign request', 'error');
-    } finally {
-      setIsUpdating(false);
-    }
-  };
 
 
   const getStatusColor = (status) => {
@@ -304,11 +275,12 @@ const CleaningManagement = () => {
           <p className="text-slate-600">Manage cleaning requests and assignments - Operations Assistant</p>
         </div>
         <button
-          onClick={fetchRequests}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <RefreshCw className="w-4 h-4" />
-          <span>Refresh</span>
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
         </button>
       </div>
 
@@ -411,59 +383,58 @@ const CleaningManagement = () => {
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
                           {request.status.replace('_', ' ')}
                         </span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(request.priority)}`}>
-                          {request.priority}
-                        </span>
+                        {request.preferred_time && (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {request.preferred_time}
+                          </span>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div>
                           <p className="text-sm font-medium text-slate-600 mb-1">Student</p>
-                          <p className="text-slate-800">{request.user_profiles?.full_name}</p>
-                          <p className="text-sm text-slate-500">{request.user_profiles?.admission_number}</p>
+                          <p className="text-slate-800 font-semibold">
+                            {request.users?.full_name || request.users?.email?.split('@')[0] || 'Unknown Student'}
+                          </p>
+                          <p className="text-sm text-slate-500">
+                            {request.users?.admission_number || 'Admission: N/A'}
+                          </p>
                         </div>
 
                         <div>
                           <p className="text-sm font-medium text-slate-600 mb-1">Room</p>
                           <p className="text-slate-800">
-                            Room {request.rooms?.room_number} (Floor {request.rooms?.floor})
+                            Room {request.rooms?.room_number || 'Unknown'} (Floor {request.rooms?.floor || 'Unknown'})
                           </p>
                         </div>
 
                         <div className="md:col-span-2">
                           <p className="text-sm font-medium text-slate-600 mb-1">Description</p>
-                          <p className="text-slate-800">{request.description}</p>
+                          <p className="text-slate-800">{request.special_instructions || 'No special instructions'}</p>
                         </div>
                       </div>
 
                       <div className="flex items-center space-x-4 text-sm text-slate-600">
                         <div className="flex items-center space-x-1">
                           <Calendar className="w-4 h-4" />
-                          <span>Requested: {new Date(request.requested_at).toLocaleDateString()}</span>
+                          <span>Requested: {request.created_at ? new Date(request.created_at).toLocaleDateString() : 'Unknown'}</span>
                         </div>
                         
-                        {request.preferred_time && (
+                        {request.preferred_date && (
                           <div className="flex items-center space-x-1">
                             <Clock className="w-4 h-4" />
-                            <span>Preferred: {new Date(request.preferred_time).toLocaleDateString()}</span>
+                            <span>Preferred: {new Date(request.preferred_date).toLocaleDateString()}</span>
                           </div>
                         )}
 
-                        {request.assigned_at && (
+                        {request.completed_at && (
                           <div className="flex items-center space-x-1">
                             <User className="w-4 h-4" />
-                            <span>Assigned: {new Date(request.assigned_at).toLocaleDateString()}</span>
+                            <span>Completed: {new Date(request.completed_at).toLocaleDateString()}</span>
                           </div>
                         )}
                       </div>
 
-                      {request.cleaning_staff && (
-                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-sm text-blue-800">
-                            <strong>Assigned to:</strong> {request.cleaning_staff.full_name}
-                          </p>
-                        </div>
-                      )}
 
                       {request.notes && (
                         <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
@@ -487,26 +458,15 @@ const CleaningManagement = () => {
                           </button>
                           <button
                             onClick={() => {
-                              const reason = prompt('Please provide a reason for rejection (optional):');
-                              if (reason !== null) { // User didn't cancel
-                                handleRejectRequest(request.id, reason);
-                              }
+                              setSelectedRequest(request);
+                              setRejectReason('');
+                              setShowRejectModal(true);
                             }}
                             disabled={isUpdating}
                             className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm flex items-center space-x-1 disabled:opacity-50"
                           >
                             <AlertCircle className="w-4 h-4" />
                             <span>Reject</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedRequest(request);
-                              setShowAssignModal(true);
-                            }}
-                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center space-x-1"
-                          >
-                            <UserCheck className="w-4 h-4" />
-                            <span>Assign</span>
                           </button>
                         </>
                       )}
@@ -565,72 +525,73 @@ const CleaningManagement = () => {
         </div>
       </div>
 
-      {/* Assign Modal */}
-      {showAssignModal && selectedRequest && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-slate-800">Assign Cleaning Staff</h3>
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <div className="space-y-4">
-              <div className="bg-slate-50 rounded-lg p-4">
-                <h4 className="font-medium text-slate-800 mb-2">Request Details</h4>
-                <p className="text-sm text-slate-600">
-                  <strong>Type:</strong> {selectedRequest.cleaning_type} Cleaning
-                </p>
-                <p className="text-sm text-slate-600">
-                  <strong>Priority:</strong> {selectedRequest.priority}
-                </p>
-                <p className="text-sm text-slate-600">
-                  <strong>Room:</strong> {selectedRequest.rooms?.room_number}
-                </p>
+      {/* Reject Request Modal */}
+      {showRejectModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <AlertCircle className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800">Reject Cleaning Request</h3>
+                  <p className="text-sm text-slate-500">Are you sure you want to reject this request?</p>
+                </div>
               </div>
 
-              <div>
+              <div className="bg-slate-50 rounded-xl p-4 mb-6">
+                <div className="text-sm text-slate-600">
+                  <p className="font-medium text-slate-800 mb-1">
+                    {selectedRequest.cleaning_type} Cleaning Request
+                  </p>
+                  <p className="mb-1">Student: {selectedRequest.users?.full_name || selectedRequest.users?.email?.split('@')[0] || 'Unknown Student'}</p>
+                  <p className="mb-1 text-sm text-slate-500">Admission: {selectedRequest.users?.admission_number || 'N/A'}</p>
+                  <p className="mb-1">Room: {selectedRequest.rooms?.room_number || 'Unknown'}</p>
+                  <p>Preferred Date: {selectedRequest.preferred_date ? new Date(selectedRequest.preferred_date).toLocaleDateString() : 'Not specified'}</p>
+                </div>
+              </div>
+
+              <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-600 mb-2">
-                  Select Staff Member
+                  Reason for rejection (optional)
                 </label>
-                <select
-                  id="staff-select"
-                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select staff member</option>
-                  {staff.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.full_name} ({member.role})
-                    </option>
-                  ))}
-                </select>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Please provide a reason for rejection..."
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                  rows={3}
+                />
               </div>
 
-              <div className="flex space-x-3">
+              <div className="flex justify-end space-x-3">
                 <button
-                  onClick={() => setShowAssignModal(false)}
-                  className="flex-1 border border-slate-300 text-slate-700 py-2 px-4 rounded-lg hover:bg-slate-50 transition-colors"
+                  onClick={() => {
+                    setShowRejectModal(false);
+                    setSelectedRequest(null);
+                    setRejectReason('');
+                  }}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    const staffId = document.getElementById('staff-select').value;
-                    if (staffId) {
-                      handleAssignRequest(selectedRequest.id, staffId);
-                    }
-                  }}
+                  onClick={handleConfirmReject}
                   disabled={isUpdating}
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                 >
                   {isUpdating ? (
-                    <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Rejecting...</span>
+                    </>
                   ) : (
-                    'Assign'
+                    <>
+                      <AlertCircle className="w-4 h-4" />
+                      <span>Reject Request</span>
+                    </>
                   )}
                 </button>
               </div>

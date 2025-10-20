@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useNotification } from '../../contexts/NotificationContext';
 import CleaningManagement from '../CleaningManagement';
 import RoomRequestManagement from '../RoomRequestManagement';
+import StaffProfileView from '../StaffProfileView';
 import { 
   Building2, 
   Users, 
@@ -138,6 +139,7 @@ const OperationsDashboard = () => {
     { id: 'overview', label: 'Overview', icon: Home },
     { id: 'cleaning', label: 'Cleaning Management', icon: Activity },
     { id: 'rooms', label: 'Room Requests', icon: Building2 },
+    { id: 'profile', label: 'My Profile', icon: User },
   ];
 
   const renderOverview = () => (
@@ -239,6 +241,8 @@ const OperationsDashboard = () => {
         return <CleaningManagement />;
       case 'rooms':
         return <RoomRequestManagement />;
+      case 'profile':
+        return <StaffProfileView staffProfile={user} user={user} />;
       case 'overview':
         return renderOverview();
       default:
@@ -317,6 +321,7 @@ const OperationsDashboard = () => {
               <p className="text-slate-600 group-hover:text-amber-600 transition-colors duration-200">
                 {activeTab === 'cleaning' ? 'Manage hostel cleaning operations' : 
                  activeTab === 'rooms' ? 'Manage student room requests and allocations' :
+                 activeTab === 'profile' ? 'View and manage your staff profile information' :
                  'Manage hostel operations'}
               </p>
             </div>

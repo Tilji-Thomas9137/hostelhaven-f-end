@@ -502,42 +502,33 @@ const RoomRequestManagement = () => {
             </div>
           </div>
           <div className="flex space-x-3">
-            <button
-              onClick={fetchRequests}
-              className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl hover:from-blue-600 hover:to-indigo-600 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-            >
-              <RefreshCw className="w-5 h-5" />
-              <span className="font-medium">Refresh</span>
-            </button>
-            <button
-              onClick={async () => {
-                console.log('🔍 MANUAL TEST: Testing API endpoints...');
-                try {
-                  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-                  
-                  // Test simple endpoint
-                  console.log('🔍 MANUAL TEST: Testing simple-test endpoint...');
-                  const simpleResponse = await fetch(`${API_BASE_URL}/api/room-requests/simple-test`);
-                  const simpleResult = await simpleResponse.json();
-                  console.log('🔍 MANUAL TEST: Simple test result:', simpleResult);
-                  
-                  // Test test-all-query endpoint
-                  console.log('🔍 MANUAL TEST: Testing test-all-query endpoint...');
-                  const queryResponse = await fetch(`${API_BASE_URL}/api/room-requests/test-all-query`);
-                  const queryResult = await queryResponse.json();
-                  console.log('🔍 MANUAL TEST: Query test result:', queryResult);
-                  
-                  alert(`Simple test: ${simpleResult.count || 0} requests\nQuery test: ${queryResult.count || 0} requests\n\nCheck console for full details`);
-                } catch (error) {
-                  console.error('🔍 MANUAL TEST: Error:', error);
-                  alert('Test failed: ' + error.message);
-                }
-              }}
-              className="flex items-center space-x-2 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-            >
-              <AlertCircle className="w-5 h-5" />
-              <span className="font-medium">Test API</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={fetchRequests}
+                className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl hover:from-blue-600 hover:to-indigo-600 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              >
+                <RefreshCw className="w-5 h-5" />
+                <span className="font-medium">Refresh</span>
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+                    const response = await fetch(`${API_BASE_URL}/api/room-requests/debug-check`);
+                    const result = await response.json();
+                    console.log('🔍 DEBUG CHECK Result:', result);
+                    showNotification(`Debug check completed. Check console for details.`, 'success');
+                  } catch (error) {
+                    console.error('Debug check error:', error);
+                    showNotification('Debug check failed', 'error');
+                  }
+                }}
+                className="flex items-center space-x-2 px-4 py-3 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-xl hover:from-gray-600 hover:to-gray-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              >
+                <AlertCircle className="w-4 h-4" />
+                <span className="font-medium">Debug</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

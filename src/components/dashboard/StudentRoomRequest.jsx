@@ -978,7 +978,7 @@ const StudentRoomRequest = () => {
               {(() => {
                 const actualOccupancy = Math.max(room.current_occupancy || 0, room.occupied || 0);
                 return actualOccupancy < room.capacity && room.status !== 'full' && room.status !== 'maintenance';
-              })() && (!myRequest || !['pending', 'waitlisted', 'allocated'].includes(myRequest.status)) ? (
+              })() && (!myRequest || !['pending', 'waitlisted', 'allocated', 'approved'].includes(myRequest.status)) ? (
                 <button
                   onClick={() => handleRequestRoom(room)}
                   disabled={isSubmitting && loadingRoomId === room.id}
@@ -1002,7 +1002,14 @@ const StudentRoomRequest = () => {
                 </button>
               ) : !canSubmitNewRequest ? (
                 <div className="text-center py-2">
-                  <p className="text-sm text-slate-500">{requestMessage}</p>
+                  {myRequest && myRequest.status === 'approved' ? (
+                    <div className="flex items-center justify-center space-x-2">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <p className="text-sm text-green-600 font-medium">Request Approved</p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">{requestMessage}</p>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-2">
@@ -1019,7 +1026,8 @@ const StudentRoomRequest = () => {
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Home },
-    ...(myAllocation && myAllocation.allocation_status === 'confirmed' ? [] : 
+    ...(myAllocation && myAllocation.allocation_status === 'confirmed' || 
+        (myRequest && ['approved', 'allocated'].includes(myRequest.status)) ? [] : 
         [{ id: 'rooms', label: 'Available Rooms', icon: Building2 }])
   ];
 
