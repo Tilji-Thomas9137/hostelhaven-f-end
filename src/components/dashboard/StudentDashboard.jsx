@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNotification } from '../../contexts/NotificationContext';
+import useBeautifulToast from '../../hooks/useBeautifulToast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { complaintSchema, leaveRequestSchema, profileUpdateSchema } from '../../lib/validation';
 import { Link, useNavigate } from 'react-router-dom';
@@ -10,8 +11,10 @@ import StudentProfileForm from '../StudentProfileForm';
 import StudentProfileView from '../StudentProfileView';
 import StudentRoomRequest from './StudentRoomRequest';
 import StudentCleaningRequest from '../StudentCleaningRequest';
-import StudentLeaveRequest from '../StudentLeaveRequest';
 import StudentComplaints from '../StudentComplaints';
+import OutpassModal from '../OutpassModal';
+import RazorpayPaymentModal from '../ui/RazorpayPaymentModal';
+import ConfirmationModal from '../ui/ConfirmationModal';
 import { 
   Building2, 
   Users, 
@@ -26,6 +29,7 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
+  XCircle,
   MapPin,
   Phone,
   Mail,
@@ -35,13 +39,19 @@ import {
   Filter,
   Download,
   UserCheck,
-  Loader2
+  Loader2,
+  Camera,
+  Upload,
+  Shield,
+  Activity
 } from 'lucide-react';
 
-const StudentDashboard = () => {
+function StudentDashboard() {
+  // State management for user data and UI
   const navigate = useNavigate();
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
   const { showNotification } = useNotification();
+  const { showSuccess, showError, showWarning, showInfo } = useBeautifulToast();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -56,6 +66,7 @@ const StudentDashboard = () => {
   const [roomDetails, setRoomDetails] = useState(null);
   const [payments, setPayments] = useState([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showRazorpayModal, setShowRazorpayModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     payment_method: 'online',
@@ -68,12 +79,22 @@ const StudentDashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [showComplaintModal, setShowComplaintModal] = useState(false);
-  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [showOutpassModal, setShowOutpassModal] = useState(false);
+  const [showEditOutpassModal, setShowEditOutpassModal] = useState(false);
+  const [showExtendOutpassModal, setShowExtendOutpassModal] = useState(false);
+  const [editingOutpass, setEditingOutpass] = useState(null);
+  const [extendingOutpass, setExtendingOutpass] = useState(null);
+  const [confirmationModal, setConfirmationModal] = useState({
+    isOpen: false,
+    type: 'danger',
+    title: '',
+    message: '',
+    onConfirm: null,
+    isLoading: false
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showEditComplaintModal, setShowEditComplaintModal] = useState(false);
   const [editingComplaint, setEditingComplaint] = useState(null);
-  const [showEditLeaveModal, setShowEditLeaveModal] = useState(false);
-  const [editingLeaveRequest, setEditingLeaveRequest] = useState(null);
   const [complaintStatusFilter, setComplaintStatusFilter] = useState('');
   const [complaintCategoryFilter, setComplaintCategoryFilter] = useState('');
   const [complaintSearch, setComplaintSearch] = useState('');
@@ -89,6 +110,8 @@ const StudentDashboard = () => {
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [dataCache, setDataCache] = useState({});
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -134,7 +157,21 @@ const StudentDashboard = () => {
           throw profileError;
         }
 
-        setUser(userProfile);
+        // Normalize user object: ensure fullName is available for UI
+        const computedFullName =
+          userProfile.full_name ||
+          session.user.user_metadata?.full_name ||
+          session.user.user_metadata?.name ||
+          userProfile.fullName ||
+          session.user.email?.split('@')[0] ||
+          'Student';
+        // Set user with normalized name and avatar
+        setUser({
+          ...userProfile,
+          fullName: computedFullName,
+          full_name: userProfile.full_name ?? computedFullName,
+          avatar_url: userProfile.avatar_url || session.user.user_metadata?.avatar_url || null
+        });
         setProfileForm({ 
           fullName: userProfile.full_name || '', 
           phone: userProfile.phone || '' 
@@ -234,65 +271,111 @@ const StudentDashboard = () => {
     fetchLeaveRequests();
   }, [leaveStatusFilter]);
 
+  // Refetch room details when room request status changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('room_allocation_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'room_allocations'
+      }, () => {
+        fetchRoomDetails();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
 
   const fetchRoomDetails = async () => {
     try {
+      setDataLoading(prev => ({ ...prev, room: true }));
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      // Resolve the database user id (users.id) from auth uid if needed
-      let databaseUserId = user?.id;
-      if (!databaseUserId) {
-        const { data: userRow } = await supabase
-          .from('users')
-          .select('id')
-          .eq('auth_uid', session.user.id)
-          .maybeSingle();
-        databaseUserId = userRow?.id || null;
-      }
-
-      if (!databaseUserId) {
+      if (!session) {
         setRoomDetails(null);
+        setDataLoading(prev => ({ ...prev, room: false }));
         return;
       }
 
-      // Simplified query to get room details from user_profiles
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('room_id, join_date')
-        .eq('user_id', databaseUserId)
-        .maybeSingle();
+      // Use the backend API for more reliable room data fetching
+      const response = await fetch(`${API_BASE_URL}/api/rooms/my-room`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-      if (profileError) {
-        console.error('Error fetching room details:', profileError);
-        setRoomDetails(null);
-        return;
-      }
-
-      if (profileData && profileData.room_id) {
-        setRoomDetails({
-          id: profileData.room_id,
-          roomNumber: profileData.room_id,
-          floor: 'N/A',
-          roomType: 'Standard',
-          capacity: 2,
-          occupied: 1,
-          price: 0,
-          status: 'active',
-          hostel: {
-            name: 'N/A',
-            address: 'N/A',
-            city: 'N/A',
-            phone: 'N/A'
-          },
-          roommates: []
-        });
+      if (response.ok) {
+        const result = await response.json();
+        console.log('🏠 Room API Response (full):', JSON.stringify(result, null, 2));
+        
+        // Check if there's room data (backend always returns room when allocation exists)
+        if (result.success && result.data?.room) {
+          const roomData = result.data.room;
+          const allocationData = result.data.allocation || {};
+          console.log('✅ Room data found:', roomData);
+          console.log('✅ Allocation data:', allocationData);
+          
+          setRoomDetails({
+            id: roomData.id,
+            roomNumber: roomData.room_number,
+            floor: roomData.floor,
+            roomType: roomData.room_type,
+            capacity: roomData.capacity,
+            occupied: roomData.occupied || roomData.current_occupancy || 0,
+            price: roomData.price,
+            status: roomData.status,
+            allocationStatus: allocationData.allocationStatus || allocationData.allocation_status,
+            allocationDate: allocationData.allocationDate || allocationData.allocation_date,
+            startDate: allocationData.startDate || allocationData.start_date,
+            endDate: allocationData.endDate || allocationData.end_date,
+            hostel: {
+              name: 'HostelHaven',
+              address: 'N/A',
+              city: 'N/A',
+              phone: 'N/A'
+            },
+            roommates: result.data.roommates || []
+          });
+        } else {
+          console.log('❌ No room data found in response');
+          console.log('❌ Response structure:', {
+            success: result.success,
+            hasData: !!result.data,
+            hasRoom: !!result.data?.room,
+            message: result.data?.message || result.message,
+            fullResponse: result
+          });
+          
+          // Try fallback: check if there's an allocation without room data
+          if (result.success && result.data?.allocation) {
+            console.log('⚠️ Found allocation but no room data. Allocation:', result.data.allocation);
+          }
+          
+          setRoomDetails(null);
+        }
       } else {
+        console.error('❌ Failed to fetch room details:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('❌ Error response body:', errorText);
+        
+        try {
+          const errorJson = JSON.parse(errorText);
+          console.error('❌ Parsed error:', errorJson);
+        } catch (e) {
+          console.error('❌ Could not parse error as JSON');
+        }
+        
         setRoomDetails(null);
       }
+      
+      setDataLoading(prev => ({ ...prev, room: false }));
     } catch (error) {
       console.error('Error fetching room details:', error);
-    } finally {
+      setRoomDetails(null);
       setDataLoading(prev => ({ ...prev, room: false }));
     }
   };
@@ -382,43 +465,74 @@ const StudentDashboard = () => {
   const fetchLeaveRequests = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      let query = supabase
-        .from('leave_requests')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (leaveStatusFilter) {
-        query = query.eq('status', leaveStatusFilter);
-      }
-
-      const { data: leaveData, error: leaveError } = await query;
-
-      if (leaveError) {
-        console.error('Error fetching leave requests:', leaveError);
-        // If table doesn't exist, just set empty array
-        if (leaveError.message?.includes('relation') && leaveError.message?.includes('does not exist')) {
-          setLeaveRequests([]);
-          return;
-        }
+      if (!session) {
+        console.log('❌ No session found');
         return;
       }
 
-      setLeaveRequests(leaveData.map(request => ({
-        id: request.id,
-        reason: request.reason,
-        startDate: request.start_date,
-        endDate: request.end_date,
-        status: request.status,
-        emergency_contact: request.emergency_contact,
-        emergency_phone: request.emergency_phone,
-        createdAt: new Date(request.created_at).toLocaleDateString()
-      })));
+      console.log('🔍 Fetching outpass requests for user:', session.user.id);
+
+      // Use the backend API instead of direct Supabase query to handle user ID mapping correctly
+      const response = await fetch(`${API_BASE_URL}/api/outpass/my-requests`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        console.error('❌ Error fetching outpass requests:', response.status, response.statusText);
+        setLeaveRequests([]);
+        return;
+      }
+
+      const result = await response.json();
+      console.log('🔍 API response:', result);
+
+      if (!result.success) {
+        console.error('❌ API error:', result.message);
+        setLeaveRequests([]);
+        return;
+      }
+
+      const leaveData = result.data || [];
+      console.log('✅ Successfully fetched data:', leaveData);
+      console.log('🔍 Number of records:', leaveData?.length || 0);
+
+      if (!leaveData || leaveData.length === 0) {
+        console.log('🔍 No data found in database');
+        setLeaveRequests([]);
+        return;
+      }
+
+      // Apply status filter if specified
+      let filteredData = leaveData;
+      if (leaveStatusFilter) {
+        filteredData = leaveData.filter(request => request.status === leaveStatusFilter);
+      }
+
+      const mappedRequests = filteredData.map(request => {
+        console.log('🔍 Mapping request:', request);
+        return {
+          id: request.id,
+          reason: request.reason,
+          startDate: request.start_date,
+          endDate: request.end_date,
+          status: request.status,
+          emergency_contact: request.emergency_contact,
+          emergency_phone: request.emergency_phone,
+          destination: request.destination,
+          transport_mode: request.transport_mode,
+          rejection_reason: request.rejection_reason,
+          createdAt: new Date(request.created_at).toLocaleDateString()
+        };
+      });
+      
+      console.log('✅ Mapped requests:', mappedRequests);
+      setLeaveRequests(mappedRequests);
     } catch (error) {
-      console.error('Error fetching leave requests:', error);
+      console.error('❌ Exception fetching outpass requests:', error);
+      setLeaveRequests([]);
     } finally {
       setDataLoading(prev => ({ ...prev, leave: false }));
     }
@@ -562,6 +676,11 @@ const StudentDashboard = () => {
         setProfileCompletion(completion);
         setProfileStatus(status);
 
+        // Update user state with avatar URL from profile
+        if (profileData.avatar_url) {
+          setUser(prev => ({ ...prev, avatar_url: profileData.avatar_url }));
+        }
+
         // Cache the data in memory
         setDataCache(prev => ({
           ...prev,
@@ -645,6 +764,104 @@ const StudentDashboard = () => {
     setActiveTab('overview');
   };
 
+  const handleAvatarSelect = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarUpload = async (event) => {
+    try {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      
+      if (!file.type.startsWith('image/')) {
+        showError('Please select a valid image file (JPG, PNG, GIF, etc.)', {
+          duration: 4000,
+          title: 'Invalid File Type!'
+        });
+        return;
+      }
+      
+      if (file.size > 5 * 1024 * 1024) {
+        showError('Image size must be 5MB or less. Please choose a smaller image.', {
+          duration: 4000,
+          title: 'File Too Large!'
+        });
+        return;
+      }
+
+      setIsUploadingAvatar(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `${session.user.id}/${fileName}`;
+
+      // Upload to the profile_picture bucket
+      const { error: uploadError } = await supabase.storage
+        .from('profile_picture')
+        .upload(filePath, file, { 
+          cacheControl: '3600', 
+          upsert: true 
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('profile_picture')
+        .getPublicUrl(filePath);
+
+      // Update user state immediately for UI feedback
+      setUser(prev => ({ ...prev, avatar_url: publicUrl }));
+
+      // Persist avatar_url to user_profiles table
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ 
+            avatar_url: publicUrl,
+            status: 'complete',
+            profile_status: 'active'
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.warn('Failed to persist avatar_url to user_profiles:', errorData);
+        }
+      } catch (e) {
+        console.warn('Failed to persist avatar_url to user_profiles:', e);
+      }
+
+      try {
+        await supabase.auth.updateUser({ data: { avatar_url: publicUrl } });
+      } catch (e) {
+        console.warn('Failed to update auth metadata avatar_url:', e);
+      }
+
+      showSuccess('Your profile picture has been updated beautifully! ✨', {
+        duration: 3000,
+        title: 'Picture Updated!'
+      });
+      
+    } catch (err) {
+      console.error('Avatar upload failed:', err);
+      showError(`Failed to update your profile picture: ${err.message || 'Unknown error'}`, {
+        duration: 5000,
+        title: 'Upload Failed!'
+      });
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -661,10 +878,13 @@ const StudentDashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50 to-amber-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto mb-4"></div>
-          <p className="text-slate-600">Loading dashboard...</p>
+          <div className="relative">
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-orange-500 absolute top-0 left-1/2 transform -translate-x-1/2"></div>
+          </div>
+          <p className="text-gray-700 font-semibold text-lg mt-4 animate-pulse">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -672,16 +892,19 @@ const StudentDashboard = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-amber-100 p-8 text-center">
-          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <AlertCircle className="w-8 h-8" />
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50 to-amber-50 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl border border-orange-100 p-8 text-center">
+          <div className="relative inline-block mb-6">
+            <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-pink-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
+            <div className="relative w-16 h-16 bg-gradient-to-r from-red-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
+              <AlertCircle className="w-8 h-8 text-white" />
+            </div>
           </div>
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">Setup Required</h2>
-          <p className="text-slate-600 mb-6">{error}</p>
+          <h2 className="text-2xl font-extrabold bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent mb-4">Setup Required</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="w-full bg-amber-600 text-white px-4 py-3 rounded-xl hover:bg-amber-700 transition-colors"
+            className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-xl hover:from-orange-600 hover:to-amber-600 transition-all duration-300 transform hover:scale-105 shadow-lg font-semibold"
           >
             Retry
           </button>
@@ -701,12 +924,13 @@ const StudentDashboard = () => {
     { id: 'payments', label: 'Payments', icon: CreditCard },
     { id: 'cleaning', label: 'Cleaning Requests', icon: Building2 },
     { id: 'complaints', label: 'Complaints', icon: AlertCircle },
-    { id: 'leave', label: 'Leave Requests', icon: Calendar },
+    { id: 'leave', label: 'Outpass', icon: Calendar },
     { id: 'profile', label: 'Account Settings', icon: Settings }
   ];
 
   const renderOverview = () => {
-    const pendingPayments = payments.filter(p => p.status === 'pending').length;
+    const pendingList = payments.filter(p => p.status === 'pending');
+    const pendingPayments = pendingList.length;
     const activeComplaints = complaints.filter(c => c.status === 'pending' || c.status === 'in_progress').length;
     const totalLeaveRequests = leaveRequests.length;
 
@@ -733,6 +957,45 @@ const StudentDashboard = () => {
           </div>
         )}
 
+
+        {/* Pending Payment Callout */}
+        {pendingPayments > 0 && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl flex items-center justify-center">
+                  <CreditCard className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800">Payment Pending</h3>
+                  <p className="text-slate-600">
+                    You have {pendingPayments} pending {pendingPayments === 1 ? 'payment' : 'payments'}. Please complete the payment to continue.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => setActiveTab('payments')}
+                  className="px-4 py-2 border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 transition-colors"
+                >
+                  Proceed
+                </button>
+                <button
+                  onClick={() => {
+                    const firstPending = pendingList[0];
+                    if (firstPending) {
+                      setSelectedPayment(firstPending);
+                      setShowRazorpayModal(true);
+                    }
+                  }}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                >
+                  Pay Now
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {hasProfile === true && profileStatus === 'pending_review' && (
           <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-2xl p-6">
@@ -763,106 +1026,139 @@ const StudentDashboard = () => {
           </div>
         )}
         
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center space-x-4">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl flex items-center justify-center shadow-lg">
-                <Building2 className="w-7 h-7" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-800">Room Assignment</h3>
-                {dataLoading.room ? (
-                  <div className="animate-pulse">
-                    <div className="h-8 bg-slate-200 rounded w-24 mb-2"></div>
-                    <div className="h-4 bg-slate-200 rounded w-32"></div>
+        {/* Hero Stats Cards with Vibrant Design */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Payment Status Card */}
+          <div className="relative bg-gradient-to-br from-green-500 via-emerald-500 to-teal-500 rounded-3xl shadow-2xl p-8 overflow-hidden transform hover:scale-105 transition-all duration-300 animate-fadeIn group">
+            {/* Animated Background Pattern */}
+            <div className="absolute inset-0 opacity-20">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full blur-2xl animate-pulse"></div>
+              <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full blur-2xl animate-pulse delay-700"></div>
+            </div>
+            
+            <div className="relative z-10">
+              <div className="flex items-start justify-between mb-6">
+                <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-xl transform group-hover:scale-110 transition-transform duration-300">
+                  <CreditCard className="w-8 h-8 text-white" />
+                </div>
+                {pendingPayments === 0 && (
+                  <div className="w-8 h-8 bg-white/30 rounded-full flex items-center justify-center animate-heartbeat">
+                    <CheckCircle className="w-5 h-5 text-white" />
                   </div>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-900">{roomDetails?.roomNumber || 'Not Assigned'}</p>
-                    {roomDetails && (
-                      <p className="text-sm text-slate-600">Floor {roomDetails.floor} • {roomDetails.roomType}</p>
-                    )}
-                  </>
                 )}
               </div>
+              
+              <h3 className="text-white/90 text-sm font-semibold uppercase tracking-wide mb-3">Payment Status</h3>
+              
+              {dataLoading.payments ? (
+                <div className="animate-pulse">
+                  <div className="h-10 bg-white/20 rounded-lg w-32 mb-2"></div>
+                  <div className="h-4 bg-white/20 rounded w-40"></div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-5xl font-extrabold text-white mb-2">
+                    {pendingPayments > 0 ? pendingPayments : '0'}
+                  </p>
+                  <p className="text-white/80 text-sm font-medium">
+                    {pendingPayments > 0 ? 'Outstanding payments' : 'All up to date'}
+                  </p>
+                  {pendingPayments === 0 && (
+                    <div className="mt-4 flex items-center text-white/90 text-xs">
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      <span>All Clear</span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
-          
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center space-x-4">
-              <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${
-                pendingPayments > 0 ? 'bg-gradient-to-br from-red-500 to-red-600 text-white' : 'bg-gradient-to-br from-green-500 to-green-600 text-white'
-              }`}>
-                <CreditCard className="w-7 h-7" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-800">Payment Status</h3>
-                {dataLoading.payments ? (
-                  <div className="animate-pulse">
-                    <div className="h-8 bg-slate-200 rounded w-24 mb-2"></div>
-                    <div className="h-4 bg-slate-200 rounded w-32"></div>
+
+          {/* Active Complaints Card */}
+          <div className="relative bg-gradient-to-br from-red-500 via-pink-500 to-rose-500 rounded-3xl shadow-2xl p-8 overflow-hidden transform hover:scale-105 transition-all duration-300 animate-fadeIn delay-100 group">
+            {/* Animated Background Pattern */}
+            <div className="absolute inset-0 opacity-20">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full blur-2xl animate-pulse delay-300"></div>
+              <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full blur-2xl animate-pulse delay-500"></div>
+            </div>
+            
+            <div className="relative z-10">
+              <div className="flex items-start justify-between mb-6">
+                <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-xl transform group-hover:scale-110 transition-transform duration-300">
+                  <AlertCircle className="w-8 h-8 text-white" />
+                </div>
+                {activeComplaints === 0 && (
+                  <div className="w-8 h-8 bg-white/30 rounded-full flex items-center justify-center animate-heartbeat">
+                    <Shield className="w-5 h-5 text-white" />
                   </div>
-                ) : (
-                  <>
-                    <p className={`text-2xl font-bold ${pendingPayments > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {pendingPayments > 0 ? `${pendingPayments} Pending` : 'Up to Date'}
-                    </p>
-                    <p className="text-sm text-slate-600">
-                      {pendingPayments > 0 ? 'Outstanding payments' : 'All payments current'}
-                    </p>
-                  </>
                 )}
               </div>
+              
+              <h3 className="text-white/90 text-sm font-semibold uppercase tracking-wide mb-3">Active Issues</h3>
+              
+              {dataLoading.complaints ? (
+                <div className="animate-pulse">
+                  <div className="h-10 bg-white/20 rounded-lg w-16 mb-2"></div>
+                  <div className="h-4 bg-white/20 rounded w-40"></div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-5xl font-extrabold text-white mb-2">{activeComplaints}</p>
+                  <p className="text-white/80 text-sm font-medium">
+                    {activeComplaints > 0 ? 'Issues need attention' : 'No active issues'}
+                  </p>
+                  {activeComplaints === 0 && (
+                    <div className="mt-4 flex items-center text-white/90 text-xs">
+                      <Shield className="w-4 h-4 mr-1" />
+                      <span>All Safe</span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
-          
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center space-x-4">
-              <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${
-                activeComplaints > 0 ? 'bg-gradient-to-br from-yellow-500 to-orange-500 text-white' : 'bg-gradient-to-br from-green-500 to-green-600 text-white'
-              }`}>
-                <AlertCircle className="w-7 h-7" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-800">Active Complaints</h3>
-                {dataLoading.complaints ? (
-                  <div className="animate-pulse">
-                    <div className="h-8 bg-slate-200 rounded w-8 mb-2"></div>
-                    <div className="h-4 bg-slate-200 rounded w-32"></div>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-900">{activeComplaints}</p>
-                    <p className="text-sm text-slate-600">
-                      {activeComplaints > 0 ? 'Issues pending resolution' : 'No active issues'}
-                    </p>
-                  </>
-                )}
-              </div>
+
+          {/* Outpass Card */}
+          <div className="relative bg-gradient-to-br from-purple-500 via-indigo-500 to-purple-600 rounded-3xl shadow-2xl p-8 overflow-hidden transform hover:scale-105 transition-all duration-300 animate-fadeIn delay-200 group">
+            {/* Animated Background Pattern */}
+            <div className="absolute inset-0 opacity-20">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full blur-2xl animate-pulse delay-500"></div>
+              <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full blur-2xl animate-pulse delay-700"></div>
             </div>
-          </div>
-          
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center space-x-4">
-              <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-xl flex items-center justify-center shadow-lg">
-                <Calendar className="w-7 h-7" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-800">Leave Requests</h3>
-                {dataLoading.leave ? (
-                  <div className="animate-pulse">
-                    <div className="h-8 bg-slate-200 rounded w-8 mb-2"></div>
-                    <div className="h-4 bg-slate-200 rounded w-32"></div>
+            
+            <div className="relative z-10">
+              <div className="flex items-start justify-between mb-6">
+                <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-xl transform group-hover:scale-110 transition-transform duration-300">
+                  <Calendar className="w-8 h-8 text-white" />
+                </div>
+                {totalLeaveRequests > 0 && (
+                  <div className="w-8 h-8 bg-white/30 rounded-full flex items-center justify-center animate-bounce">
+                    <span className="text-white font-bold text-xs">{totalLeaveRequests}</span>
                   </div>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-900">{totalLeaveRequests}</p>
-                    <p className="text-sm text-slate-600">
-                      {totalLeaveRequests > 0 ? 'Total requests submitted' : 'No requests yet'}
-                    </p>
-                  </>
                 )}
               </div>
+              
+              <h3 className="text-white/90 text-sm font-semibold uppercase tracking-wide mb-3">Outpass Requests</h3>
+              
+              {dataLoading.leave ? (
+                <div className="animate-pulse">
+                  <div className="h-10 bg-white/20 rounded-lg w-16 mb-2"></div>
+                  <div className="h-4 bg-white/20 rounded w-40"></div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-5xl font-extrabold text-white mb-2">{totalLeaveRequests}</p>
+                  <p className="text-white/80 text-sm font-medium">
+                    {totalLeaveRequests > 0 ? 'Requests submitted' : 'No requests yet'}
+                  </p>
+                  {totalLeaveRequests > 0 && (
+                    <div className="mt-4 flex items-center text-white/90 text-xs">
+                      <Clock className="w-4 h-4 mr-1" />
+                      <span>Track Status</span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -904,92 +1200,145 @@ const StudentDashboard = () => {
           </div>
         )}
 
-        {/* Recent Activity */}
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-slate-800">Recent Activity</h2>
-            <div className="text-sm text-slate-500">Last 7 days</div>
+        {/* Recent Activity with Enhanced Design */}
+        <div className="bg-white rounded-3xl shadow-xl border border-orange-100 p-8 hover:shadow-2xl transition-all duration-300">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-500 rounded-2xl flex items-center justify-center shadow-lg">
+                <Activity className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-extrabold text-gray-900">Recent Activity</h2>
+                <p className="text-sm text-gray-500 font-semibold">Last 7 days</p>
+              </div>
+            </div>
           </div>
           
           <div className="space-y-4">
             {/* Recent Payments */}
-            {payments.slice(0, 3).map((payment) => (
-              <div key={`payment-${payment.id}`} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  payment.status === 'paid' ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'
-                }`}>
-                  <CreditCard className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">
-                    Payment {payment.status === 'paid' ? 'received' : 'due'} for {payment.month}
-                  </p>
-                  <p className="text-sm text-slate-600">
-                    ${payment.amount} • {payment.status === 'paid' ? payment.paidDate : payment.dueDate}
-                  </p>
-                </div>
-                <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  payment.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {payment.status}
+            {payments.slice(0, 3).map((payment, index) => (
+              <div 
+                key={`payment-${payment.id}`} 
+                className={`relative overflow-hidden rounded-2xl p-5 border-l-4 transform hover:scale-[1.02] transition-all duration-300 ${
+                  payment.status === 'paid' 
+                    ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-500 hover:shadow-lg' 
+                    : 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-500 hover:shadow-lg'
+                } animate-fadeIn`}
+                style={{ animationDelay: `${index * 100}ms` }}
+              >
+                <div className="flex items-center space-x-4">
+                  <div className={`relative ${
+                    payment.status === 'paid' 
+                      ? 'bg-gradient-to-br from-green-500 to-emerald-600' 
+                      : 'bg-gradient-to-br from-yellow-500 to-orange-500'
+                  } w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform duration-300`}>
+                    <CreditCard className="w-7 h-7 text-white" />
+                    {payment.status === 'paid' && (
+                      <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full flex items-center justify-center animate-heartbeat">
+                        <CheckCircle className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold text-gray-900">
+                      Payment {payment.status === 'paid' ? 'received' : 'due'} for {payment.month}
+                    </p>
+                    <p className="text-sm text-gray-600 font-medium">
+                      ${payment.amount} • {payment.status === 'paid' ? payment.paidDate : payment.dueDate}
+                    </p>
+                  </div>
+                  <span className={`px-4 py-2 rounded-xl text-xs font-bold shadow-md ${
+                    payment.status === 'paid' 
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' 
+                      : 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white'
+                  }`}>
+                    {payment.status}
+                  </span>
                 </div>
               </div>
             ))}
             
             {/* Recent Complaints */}
-            {complaints.slice(0, 2).map((complaint) => (
-              <div key={`complaint-${complaint.id}`} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  complaint.status === 'resolved' ? 'bg-green-100 text-green-600' : 
-                  complaint.status === 'in_progress' ? 'bg-blue-100 text-blue-600' : 'bg-yellow-100 text-yellow-600'
-                }`}>
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">{complaint.title}</p>
-                  <p className="text-sm text-slate-600">Submitted on {complaint.createdAt}</p>
-                </div>
-                <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  complaint.status === 'resolved' ? 'bg-green-100 text-green-700' : 
-                  complaint.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {complaint.status.replace('_', ' ')}
+            {complaints.slice(0, 2).map((complaint, index) => (
+              <div 
+                key={`complaint-${complaint.id}`} 
+                className={`relative overflow-hidden rounded-2xl p-5 border-l-4 transform hover:scale-[1.02] transition-all duration-300 ${
+                  complaint.status === 'resolved' ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-500' :
+                  complaint.status === 'in_progress' ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-500' :
+                  'bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-500'
+                } hover:shadow-lg animate-fadeIn`}
+                style={{ animationDelay: `${(payments.length + index) * 100}ms` }}
+              >
+                <div className="flex items-center space-x-4">
+                  <div className={`relative w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform duration-300 ${
+                    complaint.status === 'resolved' ? 'bg-gradient-to-br from-green-500 to-emerald-600' :
+                    complaint.status === 'in_progress' ? 'bg-gradient-to-br from-blue-500 to-indigo-600' :
+                    'bg-gradient-to-br from-yellow-500 to-amber-500'
+                  }`}>
+                    <AlertCircle className="w-7 h-7 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold text-gray-900">{complaint.title}</p>
+                    <p className="text-sm text-gray-600 font-medium">Submitted on {complaint.createdAt}</p>
+                  </div>
+                  <span className={`px-4 py-2 rounded-xl text-xs font-bold shadow-md ${
+                    complaint.status === 'resolved' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' :
+                    complaint.status === 'in_progress' ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white' :
+                    'bg-gradient-to-r from-yellow-500 to-amber-500 text-white'
+                  }`}>
+                    {complaint.status.replace('_', ' ')}
+                  </span>
                 </div>
               </div>
             ))}
             
-            {/* Recent Leave Requests */}
-            {leaveRequests.slice(0, 2).map((request) => (
-              <div key={`leave-${request.id}`} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  request.status === 'approved' ? 'bg-green-100 text-green-600' : 
-                  request.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-purple-100 text-purple-600'
-                }`}>
-                  <Calendar className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">{request.reason}</p>
-                  <p className="text-sm text-slate-600">
-                    {request.startDate} to {request.endDate}
-                  </p>
-                </div>
-                <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  request.status === 'approved' ? 'bg-green-100 text-green-700' : 
-                  request.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700'
-                }`}>
-                  {request.status}
+            {/* Recent Outpass */}
+            {leaveRequests.slice(0, 2).map((request, index) => (
+              <div 
+                key={`leave-${request.id}`} 
+                className={`relative overflow-hidden rounded-2xl p-5 border-l-4 transform hover:scale-[1.02] transition-all duration-300 ${
+                  request.status === 'approved' ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-500' :
+                  request.status === 'rejected' ? 'bg-gradient-to-r from-red-50 to-pink-50 border-red-500' :
+                  'bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-500'
+                } hover:shadow-lg animate-fadeIn`}
+                style={{ animationDelay: `${(payments.length + complaints.length + index) * 100}ms` }}
+              >
+                <div className="flex items-center space-x-4">
+                  <div className={`relative w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform duration-300 ${
+                    request.status === 'approved' ? 'bg-gradient-to-br from-green-500 to-emerald-600' :
+                    request.status === 'rejected' ? 'bg-gradient-to-br from-red-500 to-pink-600' :
+                    'bg-gradient-to-br from-purple-500 to-indigo-600'
+                  }`}>
+                    <Calendar className="w-7 h-7 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold text-gray-900">{request.reason}</p>
+                    <p className="text-sm text-gray-600 font-medium">
+                      {request.startDate} to {request.endDate}
+                    </p>
+                  </div>
+                  <span className={`px-4 py-2 rounded-xl text-xs font-bold shadow-md ${
+                    request.status === 'approved' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' :
+                    request.status === 'rejected' ? 'bg-gradient-to-r from-red-500 to-pink-600 text-white' :
+                    'bg-gradient-to-r from-purple-500 to-indigo-600 text-white'
+                  }`}>
+                    {request.status}
+                  </span>
                 </div>
               </div>
             ))}
 
             {/* Show message if no recent activity */}
             {payments.length === 0 && complaints.length === 0 && leaveRequests.length === 0 && (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Clock className="w-8 h-8 text-slate-400" />
+              <div className="text-center py-16">
+                <div className="relative inline-block mb-6">
+                  <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
+                  <div className="relative w-20 h-20 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full flex items-center justify-center shadow-lg">
+                    <Clock className="w-10 h-10 text-white" />
+                  </div>
                 </div>
-                <p className="text-slate-500 font-medium">No recent activity</p>
-                <p className="text-sm text-slate-400 mt-1">Your recent actions will appear here</p>
+                <p className="text-gray-600 font-bold text-lg mb-2">No recent activity</p>
+                <p className="text-sm text-gray-400 font-semibold">Your recent actions will appear here</p>
               </div>
             )}
           </div>
@@ -1266,175 +1615,335 @@ const StudentDashboard = () => {
     const isProfileIncomplete = hasProfile === false || profileStatus === 'incomplete';
     const isProfileLoading = hasProfile === null || profileStatus === null;
     
+    // Calculate statistics
+    const totalRequests = leaveRequests.length;
+    const pendingRequests = leaveRequests.filter(r => r.status === 'pending').length;
+    const approvedRequests = leaveRequests.filter(r => r.status === 'approved').length;
+    const rejectedRequests = leaveRequests.filter(r => r.status === 'rejected').length;
+    
+    console.log('🔍 renderLeaveRequests - leaveRequests array:', leaveRequests);
+    console.log('🔍 renderLeaveRequests - totalRequests:', totalRequests);
+    console.log('🔍 renderLeaveRequests - dataLoading.leave:', dataLoading.leave);
+    
+    
     return (
       <div className="space-y-6">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-800">Outpass Requests</h2>
-            <p className="text-sm text-slate-600 mt-1">Manage your leave and outpass applications</p>
+            <h2 className="text-2xl font-bold text-slate-800">Outpass Requests</h2>
+            <p className="text-slate-600 mt-1">Manage your leave and outpass applications</p>
           </div>
-          <button 
-            onClick={() => {
-              if (isProfileLoading) {
-                showNotification('Please wait while we check your profile status', 'info');
-                return;
-              }
-              if (isProfileIncomplete) {
-                showNotification('Please complete your profile before submitting leave requests', 'error');
-                return;
-              }
-              setShowLeaveModal(true);
-            }}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
-              isProfileLoading || isProfileIncomplete
-                ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                : 'bg-amber-600 text-white hover:bg-amber-700'
-            }`}
-            disabled={isProfileLoading || isProfileIncomplete}
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Outpass</span>
-          </button>
+          <div className="flex items-center space-x-3">
+            <button 
+              onClick={() => {
+                if (isProfileLoading) {
+                  showNotification('Please wait while we check your profile status', 'info');
+                  return;
+                }
+                if (isProfileIncomplete) {
+                  showNotification('Please complete your profile before submitting outpass requests', 'error');
+                  return;
+                }
+                setShowOutpassModal(true);
+              }}
+              className={`flex items-center space-x-2 px-6 py-3 rounded-xl transition-all font-semibold shadow-lg hover:shadow-xl ${
+                isProfileLoading || isProfileIncomplete
+                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-700 hover:to-orange-700'
+              }`}
+              disabled={isProfileLoading || isProfileIncomplete}
+            >
+              <Plus className="w-5 h-5" />
+              <span>+ New Outpass</span>
+            </button>
+            
+            <button 
+              onClick={() => {
+                console.log('🔄 Manual refresh triggered');
+                fetchLeaveRequests();
+                showInfo('Refreshing outpass requests...', {
+                  duration: 2000,
+                  title: 'Refreshing...'
+                });
+              }}
+              className="flex items-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-xl transition-all font-semibold shadow-lg hover:shadow-xl hover:bg-blue-700"
+            >
+              <Clock className="w-4 h-4" />
+              <span>Refresh</span>
+            </button>
+          </div>
         </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <input
-          type="text"
-          value={leaveSearch}
-          onChange={(e) => setLeaveSearch(e.target.value)}
-          placeholder="Search by reason or destination..."
-          className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-        />
-        <select
-          value={leaveStatusFilter}
-          onChange={(e) => { setLeaveStatusFilter(e.target.value); }}
-          className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-        >
-          <option value="">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-        </select>
-        <button
-          onClick={() => { setLeaveStatusFilter(''); setLeaveSearch(''); }}
-          className="px-3 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
-        >
-          Clear Filters
-        </button>
-      </div>
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl p-6 shadow-lg border border-amber-100 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Total Requests</p>
+                <p className="text-2xl font-bold text-slate-800">{totalRequests}</p>
+              </div>
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <Calendar className="w-6 h-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl p-6 shadow-lg border border-amber-100 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Pending</p>
+                <p className="text-2xl font-bold text-yellow-600">{pendingRequests}</p>
+              </div>
+              <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                <Clock className="w-6 h-6 text-yellow-600" />
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl p-6 shadow-lg border border-amber-100 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Approved</p>
+                <p className="text-2xl font-bold text-green-600">{approvedRequests}</p>
+              </div>
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl p-6 shadow-lg border border-amber-100 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Rejected</p>
+                <p className="text-2xl font-bold text-red-600">{rejectedRequests}</p>
+              </div>
+              <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                <XCircle className="w-6 h-6 text-red-600" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-xl p-6 shadow-lg border border-amber-100">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <input
+                type="text"
+                value={leaveSearch}
+                onChange={(e) => setLeaveSearch(e.target.value)}
+                placeholder="Search by reason, destination, or transport mode..."
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
+              />
+            </div>
+            <select
+              value={leaveStatusFilter}
+              onChange={(e) => { setLeaveStatusFilter(e.target.value); }}
+              className="px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
+            >
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button
+              onClick={() => { setLeaveStatusFilter(''); setLeaveSearch(''); }}
+              className="px-4 py-3 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors font-medium"
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
       
       <div className="space-y-4">
-        {leaveRequests
-          .filter(r =>
-            leaveSearch.trim() === '' ||
-            r.reason.toLowerCase().includes(leaveSearch.toLowerCase()) ||
-            (r.destination && r.destination.toLowerCase().includes(leaveSearch.toLowerCase()))
-          )
-          .map((request) => (
-          <div key={request.id} className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-3">
-                  <h3 className="text-lg font-semibold text-slate-800">{request.reason}</h3>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    request.status === 'approved' 
-                      ? 'bg-green-100 text-green-800' 
-                      : request.status === 'pending'
-                      ? 'bg-yellow-100 text-yellow-800'
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    {request.status}
-                  </span>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                  <div>
-                    <div className="flex items-center space-x-2 text-sm text-slate-600">
-                      <Calendar className="w-4 h-4" />
-                      <span>Duration</span>
-                    </div>
-                    <div className="mt-1 text-sm font-medium text-slate-800">
-                      {request.startDate} to {request.endDate}
-                    </div>
+        {/* Outpass Requests List */}
+        <div className="space-y-6">
+          {leaveRequests
+            .filter(r =>
+              leaveSearch.trim() === '' ||
+              r.reason.toLowerCase().includes(leaveSearch.toLowerCase()) ||
+              (r.destination && r.destination.toLowerCase().includes(leaveSearch.toLowerCase())) ||
+              (r.transport_mode && r.transport_mode.toLowerCase().includes(leaveSearch.toLowerCase()))
+            )
+            .filter(r => leaveStatusFilter === '' || r.status === leaveStatusFilter)
+            .map((request) => (
+            <div key={request.id} className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6 hover:shadow-xl transition-shadow">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <h3 className="text-xl font-bold text-slate-800">{request.reason}</h3>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                      request.status === 'approved' 
+                        ? 'bg-green-100 text-green-800 border border-green-200' 
+                        : request.status === 'pending'
+                        ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                        : 'bg-red-100 text-red-800 border border-red-200'
+                    }`}>
+                      {request.status === 'pending' && <Clock className="w-4 h-4 mr-1" />}
+                      {request.status === 'approved' && <CheckCircle className="w-4 h-4 mr-1" />}
+                      {request.status === 'rejected' && <XCircle className="w-4 h-4 mr-1" />}
+                      {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                    </span>
                   </div>
                   
-                  <div>
-                    <div className="flex items-center space-x-2 text-sm text-slate-600">
-                      <MapPin className="w-4 h-4" />
-                      <span>Destination</span>
+                  {/* Request Details Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    <div className="bg-slate-50 rounded-lg p-4">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Calendar className="w-5 h-5 text-amber-600" />
+                        <span className="text-sm font-semibold text-slate-700">Departure</span>
+                      </div>
+                      <p className="text-sm text-slate-600">{request.startDate}</p>
                     </div>
-                    <div className="mt-1 text-sm font-medium text-slate-800">
-                      {request.destination || 'Not specified'}
+                    
+                    <div className="bg-slate-50 rounded-lg p-4">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Calendar className="w-5 h-5 text-green-600" />
+                        <span className="text-sm font-semibold text-slate-700">Return</span>
+                      </div>
+                      <p className="text-sm text-slate-600">{request.endDate}</p>
+                    </div>
+                    
+                    <div className="bg-slate-50 rounded-lg p-4">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <MapPin className="w-5 h-5 text-blue-600" />
+                        <span className="text-sm font-semibold text-slate-700">Destination</span>
+                      </div>
+                      <p className="text-sm text-slate-600">{request.destination || 'Not specified'}</p>
+                    </div>
+                    
+                    {request.transport_mode && (
+                      <div className="bg-slate-50 rounded-lg p-4">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <Users className="w-5 h-5 text-purple-600" />
+                          <span className="text-sm font-semibold text-slate-700">Transport</span>
+                        </div>
+                        <p className="text-sm text-slate-600 capitalize">{request.transport_mode}</p>
+                      </div>
+                    )}
+                    
+                    {request.emergency_contact && (
+                      <div className="bg-slate-50 rounded-lg p-4">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <Phone className="w-5 h-5 text-red-600" />
+                          <span className="text-sm font-semibold text-slate-700">Emergency Contact</span>
+                        </div>
+                        <p className="text-sm text-slate-600">{request.emergency_contact}</p>
+                        {request.emergency_phone && (
+                          <p className="text-xs text-slate-500 mt-1">{request.emergency_phone}</p>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="bg-slate-50 rounded-lg p-4">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Clock className="w-5 h-5 text-slate-600" />
+                        <span className="text-sm font-semibold text-slate-700">Submitted</span>
+                      </div>
+                      <p className="text-sm text-slate-600">{request.createdAt}</p>
                     </div>
                   </div>
                 </div>
+                
+                {/* Action Buttons */}
+                <div className="flex flex-col space-y-2 ml-4">
+                  {request.status === 'pending' && (
+                    <>
+                      <button 
+                        onClick={() => handleEditOutpass(request)} 
+                        className="flex items-center space-x-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 hover:border-blue-300"
+                      >
+                        <Edit className="w-4 h-4" />
+                        <span className="font-medium">Edit</span>
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteLeave(request)} 
+                        className="flex items-center space-x-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 hover:border-red-300"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        <span className="font-medium">Delete</span>
+                      </button>
+                    </>
+                  )}
+                  
+                  {request.status === 'approved' && (
+                    <>
+                      <div className="flex items-center space-x-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg border border-green-200">
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="font-medium">Approved</span>
+                      </div>
+                      <button 
+                        onClick={() => handleExtendOutpass(request)} 
+                        className="flex items-center space-x-2 px-4 py-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors border border-amber-200 hover:border-amber-300"
+                      >
+                        <Clock className="w-4 h-4" />
+                        <span className="font-medium">Extend</span>
+                      </button>
+                    </>
+                  )}
 
-                {request.emergency_contact && request.emergency_phone && (
-                  <div className="bg-slate-50 rounded-lg p-3 mb-3">
-                    <div className="flex items-center space-x-2 text-sm text-slate-600 mb-1">
-                      <Phone className="w-4 h-4" />
-                      <span>Emergency Contact</span>
-                    </div>
-                    <div className="text-sm">
-                      <span className="font-medium text-slate-800">{request.emergency_contact}</span>
-                      <span className="text-slate-500 mx-2">•</span>
-                      <span className="text-slate-800">{request.emergency_phone}</span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center space-x-2 text-xs text-slate-500">
-                  <Clock className="w-4 h-4" />
-                  <span>Requested on {request.createdAt}</span>
+                  {request.status === 'rejected' && (
+                    <button 
+                      onClick={() => handleEditOutpass(request)} 
+                      className="flex items-center space-x-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 hover:border-blue-300"
+                    >
+                      <Edit className="w-4 h-4" />
+                      <span className="font-medium">Resubmit</span>
+                    </button>
+                  )}
                 </div>
               </div>
               
-              <div className="flex items-center space-x-2">
-                {request.status === 'pending' && (
-                  <>
-                    <button 
-                      onClick={() => handleOpenEditLeave(request)} 
-                      className="flex items-center space-x-2 px-3 py-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                    >
-                      <Edit className="w-4 h-4" />
-                      <span>Edit</span>
-                    </button>
-                    <button 
-                      onClick={() => handleDeleteLeave(request)} 
-                      className="flex items-center space-x-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <span>Delete</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            
-            {request.status === 'rejected' && request.rejection_reason && (
-              <div className="mt-4 p-3 bg-red-50 rounded-lg border border-red-100">
-                <div className="flex items-center space-x-2 text-sm text-red-600 mb-1">
-                  <AlertCircle className="w-4 h-4" />
-                  <span>Rejection Reason</span>
+              {/* Rejection Reason */}
+              {request.status === 'rejected' && request.rejection_reason && (
+                <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                  <div className="flex items-center space-x-2 text-sm text-red-700 mb-2">
+                    <AlertCircle className="w-5 h-5" />
+                    <span className="font-semibold">Rejection Reason</span>
+                  </div>
+                  <p className="text-sm text-red-800 leading-relaxed">{request.rejection_reason}</p>
                 </div>
-                <p className="text-sm text-red-700">{request.rejection_reason}</p>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          ))}
 
-        {leaveRequests.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-2xl shadow-lg border border-amber-100">
-            <Calendar className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-slate-800 mb-2">No Outpass Requests</h3>
-            <p className="text-slate-600 mb-6">You haven't submitted any outpass requests yet.</p>
-            <button
-              onClick={() => setShowLeaveModal(true)}
-              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
-            >
-              Submit Your First Request
-            </button>
-          </div>
-        )}
+          {/* Empty State */}
+          {leaveRequests.length === 0 && (
+            <div className="text-center py-16 bg-white rounded-2xl shadow-lg border border-amber-100">
+              <div className="w-20 h-20 bg-gradient-to-br from-amber-100 to-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Calendar className="w-10 h-10 text-amber-600" />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-800 mb-3">No Outpass Requests Yet</h3>
+              <p className="text-slate-600 mb-8 max-w-md mx-auto">
+                You haven't submitted any outpass requests yet. Click the button below to submit your first request.
+              </p>
+              <button
+                onClick={() => {
+                  if (isProfileLoading) {
+                    showNotification('Please wait while we check your profile status', 'info');
+                    return;
+                  }
+                  if (isProfileIncomplete) {
+                    showNotification('Please complete your profile before submitting outpass requests', 'error');
+                    return;
+                  }
+                  setShowOutpassModal(true);
+                }}
+                className={`px-8 py-4 rounded-xl font-semibold transition-all shadow-lg hover:shadow-xl ${
+                  isProfileLoading || isProfileIncomplete
+                    ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-700 hover:to-orange-700'
+                }`}
+                disabled={isProfileLoading || isProfileIncomplete}
+              >
+                <Plus className="w-5 h-5 inline mr-2" />
+                Submit Your First Request
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1462,23 +1971,6 @@ const StudentDashboard = () => {
 
       const { fullName, phone } = parsed.data;
 
-      // Update users table
-      const { data: updateData, error: updateError } = await supabase
-        .from('users')
-        .update({
-          full_name: fullName,
-          phone: phone
-        })
-        .eq('id', session.user.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        console.error('Error updating user profile:', updateError);
-        setError('Failed to update profile: ' + updateError.message);
-        return;
-      }
-
       // Update user_profiles table using backend API
       try {
         const profileResponse = await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
@@ -1488,7 +1980,10 @@ const StudentDashboard = () => {
             'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({
-            // Only update fields that exist in user_profiles
+            // Update basic user information
+            full_name: fullName,
+            phone: phone,
+            // Include existing profile data
             admission_number: studentProfile?.admission_number || '',
             course: studentProfile?.course || '',
             batch_year: studentProfile?.batch_year || null,
@@ -1507,8 +2002,8 @@ const StudentDashboard = () => {
             blood_group: studentProfile?.blood_group || null,
             room_id: studentProfile?.room_id || null,
             avatar_url: studentProfile?.avatar_url || null,
-            status: studentProfile?.status || 'active',
-            profile_status: studentProfile?.profile_status || 'incomplete'
+            status: 'complete',
+            profile_status: 'active'
           })
         });
 
@@ -1523,13 +2018,18 @@ const StudentDashboard = () => {
       // Update local state
       setUser(prev => ({ 
         ...prev, 
-        full_name: updateData.full_name, 
-        phone: updateData.phone 
+        fullName: fullName,
+        full_name: fullName, 
+        phone: phone,
+        avatar_url: prev.avatar_url // Preserve existing avatar URL
       }));
 
-      // Show success message
-      setError('');
-      alert('Profile updated successfully!');
+        // Show success message
+        setError('');
+        showSuccess('Your profile has been updated successfully! 🎉', {
+          duration: 4000,
+          title: 'Profile Updated!'
+        });
       
       // Refresh profile data
       await fetchStudentProfile();
@@ -1602,21 +2102,43 @@ const StudentDashboard = () => {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-6">
             <div className="relative group">
-              <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-2 shadow-2xl hover:shadow-3xl transition-all duration-300">
+              <div 
+                className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-2 shadow-2xl hover:shadow-3xl transition-all duration-300 cursor-pointer"
+                onClick={handleAvatarSelect}
+                title="Click to update profile picture"
+              >
                 <div className="w-full h-full rounded-full overflow-hidden bg-white p-1">
                   {user?.avatar_url ? (
                     <img 
                       src={user.avatar_url} 
                       alt="Profile" 
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-400">
+                    <div className="w-full h-full flex items-center justify-center text-slate-400 group-hover:text-slate-600 transition-colors duration-300">
                       <User className="w-10 h-10" />
                     </div>
                   )}
                 </div>
               </div>
+              {/* Upload button overlay */}
+              <button
+                type="button"
+                onClick={handleAvatarSelect}
+                disabled={isUploadingAvatar}
+                className="absolute -bottom-2 -right-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-full p-3 shadow-lg transform hover:scale-110 transition-all duration-200 opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Update profile picture"
+              >
+                {isUploadingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+              </button>
+              {/* Hidden file input */}
+              <input 
+                ref={fileInputRef} 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                onChange={handleAvatarUpload} 
+              />
             </div>
             <div>
               <h3 className="text-2xl font-bold text-slate-800 mb-2">{user?.full_name || 'User'}</h3>
@@ -1720,48 +2242,6 @@ const StudentDashboard = () => {
             </button>
           </div>
         </form>
-      </div>
-
-      {/* Assignment Information */}
-      <div className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 rounded-3xl shadow-2xl border border-blue-200/50 p-8">
-        <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-            <Building2 className="w-6 h-6 text-white" />
-          </div>
-          Assignment Information
-        </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-blue-100">
-            <h4 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-blue-600" />
-              Hostel
-            </h4>
-            <p className="text-2xl font-bold text-slate-800">
-              {user?.hostel?.name || roomDetails?.hostel?.name || 'Not Assigned'}
-            </p>
-            {roomDetails?.hostel?.address && (
-              <p className="text-slate-600 mt-2">{roomDetails.hostel.address}</p>
-            )}
-          </div>
-          
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-blue-100">
-            <h4 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">
-              <Home className="w-5 h-5 text-green-600" />
-              Room
-            </h4>
-            <p className="text-2xl font-bold text-slate-800">
-              {user?.room?.room_number || roomDetails?.roomNumber || 'Not Assigned'}
-            </p>
-            {roomDetails && (
-              <div className="mt-2 space-y-1">
-                <p className="text-slate-600">Floor: {roomDetails.floor}</p>
-                <p className="text-slate-600">Type: {roomDetails.roomType}</p>
-                <p className="text-slate-600">Capacity: {roomDetails.occupied}/{roomDetails.capacity}</p>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -1894,27 +2374,27 @@ const StudentDashboard = () => {
       console.log('Submitting payload:', payload);
 
       const { data, error } = await supabase
-        .from('leave_requests')
+        .from('outpass_requests')
         .insert([payload])
         .select()
         .single();
 
       if (error) {
-        console.error('Detailed error creating leave request:', error);
+        console.error('Detailed error creating outpass request:', error);
         console.error('Error details:', JSON.stringify(error, null, 2));
-        const errorMsg = `Failed to submit leave request: ${error.message || error.details || 'Unknown error'}`;
+        const errorMsg = `Failed to submit outpass request: ${error.message || error.details || 'Unknown error'}`;
         if (notify) notify(errorMsg, 'error'); else alert(errorMsg);
         return;
       }
 
-      setShowLeaveModal(false);
+      // Modal closed by OutpassModal component
       fetchLeaveRequests();
       
-      const successMsg = 'Leave request submitted successfully!';
+      const successMsg = 'Outpass request submitted successfully!';
       if (notify) notify(successMsg, 'success'); else alert(successMsg);
     } catch (error) {
-      console.error('Exception creating leave request:', error);
-      if (notify) notify(`Failed to submit leave request: ${error.message}`, 'error'); else alert(`Failed to submit leave request: ${error.message}`);
+      console.error('Exception creating outpass request:', error);
+      if (notify) notify(`Failed to submit outpass request: ${error.message}`, 'error'); else alert(`Failed to submit outpass request: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -2011,130 +2491,6 @@ const StudentDashboard = () => {
     );
   };
 
-  const LeaveRequestModal = () => {
-    const { register, handleSubmit, watch, reset, formState: { errors, isValid } } = useForm({
-      resolver: zodResolver(leaveRequestSchema),
-      mode: 'onChange',
-      defaultValues: { 
-        reason: '', 
-        start_date: '', 
-        end_date: '', 
-        destination: '',
-        emergency_contact: '', 
-        emergency_phone: '' 
-      }
-    });
-    const [message, setMessage] = useState(null);
-
-    const onSubmit = (data) => {
-      handleCreateLeaveRequest(data, (text, type) => {
-        setMessage({ text, type });
-        setTimeout(() => setMessage(null), 4000);
-      });
-      reset();
-    };
-
-    if (!showLeaveModal) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
-          <h3 className="text-xl font-semibold text-slate-800 mb-4">Submit Outpass Request</h3>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {message && (
-              <div className={`px-3 py-2 rounded text-sm ${message.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
-                {message.text}
-              </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Purpose of Leave</label>
-              <input
-                type="text"
-                {...register('reason')}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.reason ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                placeholder="E.g., Weekend trip home, Family function, Medical appointment"
-              />
-              {errors.reason && <p className="mt-1 text-sm text-red-600">{errors.reason.message}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Destination</label>
-              <input
-                type="text"
-                {...register('destination')}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.destination ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                placeholder="Where are you going?"
-              />
-              {errors.destination && <p className="mt-1 text-sm text-red-600">{errors.destination.message}</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  {...register('start_date')}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.start_date ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                  min={new Date().toISOString().split('T')[0]}
-                />
-                {errors.start_date && <p className="mt-1 text-sm text-red-600">{errors.start_date.message}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">End Date</label>
-                <input
-                  type="date"
-                  {...register('end_date')}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.end_date ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                  min={watch('start_date') || new Date().toISOString().split('T')[0]}
-                />
-                {errors.end_date && <p className="mt-1 text-sm text-red-600">{errors.end_date.message}</p>}
-              </div>
-            </div>
-            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-              <h4 className="text-sm font-semibold text-amber-800 mb-2">Emergency Contact Information</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person</label>
-                  <input
-                    type="text"
-                    {...register('emergency_contact')}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.emergency_contact ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                    placeholder="Parent/Guardian name"
-                  />
-                  {errors.emergency_contact && <p className="mt-1 text-sm text-red-600">{errors.emergency_contact.message}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Contact Phone</label>
-                  <input
-                    type="tel"
-                    {...register('emergency_phone')}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.emergency_phone ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                    placeholder="10-digit mobile number"
-                  />
-                  {errors.emergency_phone && <p className="mt-1 text-sm text-red-600">{errors.emergency_phone.message}</p>}
-                </div>
-              </div>
-            </div>
-            <div className="flex space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => setShowLeaveModal(false)}
-                className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
-                disabled={isSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
-                disabled={isSubmitting || !isValid}
-              >
-                {isSubmitting ? 'Submitting...' : 'Submit Outpass'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  };
 
   // Export payments as CSV
   const exportPaymentsCSV = () => {
@@ -2166,11 +2522,20 @@ const StudentDashboard = () => {
 
   const handlePayNow = (payment) => {
     setSelectedPayment(payment);
-    setPaymentForm({
-      payment_method: 'online',
-      transaction_reference: ''
-    });
-    setShowPaymentModal(true);
+    // Show Razorpay modal for online payments
+    setShowRazorpayModal(true);
+  };
+
+  const handleRazorpaySuccess = (updatedPayment) => {
+    showNotification('Payment completed successfully!', 'success');
+    setShowRazorpayModal(false);
+    setSelectedPayment(null);
+    fetchPayments(); // Refresh payments
+  };
+
+  const handleRazorpayClose = () => {
+    setShowRazorpayModal(false);
+    setSelectedPayment(null);
   };
 
   const handlePaymentSubmit = async () => {
@@ -2362,183 +2727,7 @@ const StudentDashboard = () => {
     );
   };
 
-  // Edit leave flow
-  const handleOpenEditLeave = (request) => {
-    if (request.status !== 'pending') {
-      alert('Only pending leave requests can be edited');
-      return;
-    }
-    setEditingLeaveRequest(request);
-    setShowEditLeaveModal(true);
-  };
 
-  const handleUpdateLeaveRequest = async (updates) => {
-    if (!editingLeaveRequest) return;
-    setIsSubmitting(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      // Clean up empty optional fields and add updated_at
-      const payload = {
-        ...updates,
-        updated_at: new Date().toISOString()
-      };
-      if (!payload.emergency_contact) delete payload.emergency_contact;
-      if (!payload.emergency_phone) delete payload.emergency_phone;
-
-      const { error } = await supabase
-        .from('leave_requests')
-        .update(payload)
-        .eq('id', editingLeaveRequest.id)
-        .eq('user_id', session.user.id) // Ensure user owns the request
-        .eq('status', 'pending'); // Only allow updating pending requests
-
-      if (error) {
-        console.error('Error updating leave request:', error);
-        alert(error.message || 'Failed to update leave request');
-        return;
-      }
-
-      setShowEditLeaveModal(false);
-      setEditingLeaveRequest(null);
-      fetchLeaveRequests();
-      alert('Leave request updated successfully!');
-    } catch (error) {
-      console.error('Error updating leave request:', error);
-      alert('Failed to update leave request');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const EditLeaveModal = () => {
-    const { register, handleSubmit, watch, formState: { errors, isValid }, reset } = useForm({
-      resolver: zodResolver(leaveRequestSchema),
-      mode: 'onChange',
-      defaultValues: {
-        reason: editingLeaveRequest?.reason || '',
-        destination: editingLeaveRequest?.destination || '',
-        start_date: editingLeaveRequest?.startDate || '',
-        end_date: editingLeaveRequest?.endDate || '',
-        emergency_contact: editingLeaveRequest?.emergency_contact || '',
-        emergency_phone: editingLeaveRequest?.emergency_phone || ''
-      }
-    });
-
-    useEffect(() => {
-      if (editingLeaveRequest) {
-        reset({
-          reason: editingLeaveRequest.reason,
-          destination: editingLeaveRequest.destination || '',
-          start_date: editingLeaveRequest.startDate,
-          end_date: editingLeaveRequest.endDate,
-          emergency_contact: editingLeaveRequest.emergency_contact || '',
-          emergency_phone: editingLeaveRequest.emergency_phone || ''
-        });
-      }
-    }, [editingLeaveRequest, reset]);
-
-    const onSubmit = (data) => {
-      handleUpdateLeaveRequest(data);
-    };
-
-    if (!showEditLeaveModal || !editingLeaveRequest) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
-          <h3 className="text-xl font-semibold text-slate-800 mb-4">Edit Outpass Request</h3>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Purpose of Leave</label>
-              <input
-                type="text"
-                {...register('reason')}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.reason ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                placeholder="E.g., Weekend trip home, Family function, Medical appointment"
-              />
-              {errors.reason && <p className="mt-1 text-sm text-red-600">{errors.reason.message}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Destination</label>
-              <input
-                type="text"
-                {...register('destination')}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.destination ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                placeholder="Where are you going?"
-              />
-              {errors.destination && <p className="mt-1 text-sm text-red-600">{errors.destination.message}</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  {...register('start_date')}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.start_date ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                  min={new Date().toISOString().split('T')[0]}
-                />
-                {errors.start_date && <p className="mt-1 text-sm text-red-600">{errors.start_date.message}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">End Date</label>
-                <input
-                  type="date"
-                  {...register('end_date')}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.end_date ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                  min={watch('start_date') || new Date().toISOString().split('T')[0]}
-                />
-                {errors.end_date && <p className="mt-1 text-sm text-red-600">{errors.end_date.message}</p>}
-              </div>
-            </div>
-            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-              <h4 className="text-sm font-semibold text-amber-800 mb-2">Emergency Contact Information</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person</label>
-                  <input
-                    type="text"
-                    {...register('emergency_contact')}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.emergency_contact ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                    placeholder="Parent/Guardian name"
-                  />
-                  {errors.emergency_contact && <p className="mt-1 text-sm text-red-600">{errors.emergency_contact.message}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Contact Phone</label>
-                  <input
-                    type="tel"
-                    {...register('emergency_phone')}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${errors.emergency_phone ? 'border-red-300 focus:ring-red-500' : 'border-slate-300'}`}
-                    placeholder="10-digit mobile number"
-                  />
-                  {errors.emergency_phone && <p className="mt-1 text-sm text-red-600">{errors.emergency_phone.message}</p>}
-                </div>
-              </div>
-            </div>
-            <div className="flex space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => { setShowEditLeaveModal(false); setEditingLeaveRequest(null); }}
-                className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
-                disabled={isSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
-                disabled={isSubmitting || !isValid}
-              >
-                {isSubmitting ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  };
 
   // Delete complaint (pending only)
   const handleDeleteComplaint = async (complaint) => {
@@ -2573,36 +2762,178 @@ const StudentDashboard = () => {
     }
   };
 
-  // Delete leave request (pending only)
+  // Delete outpass request (pending only)
   const handleDeleteLeave = async (request) => {
     if (request.status !== 'pending') {
-      alert('Only pending leave requests can be deleted');
+      showWarning('Only pending outpass requests can be deleted', {
+        duration: 3000,
+        title: 'Cannot Delete!'
+      });
       return;
     }
-    if (!confirm('Delete this leave request?')) return;
+    
+    setConfirmationModal({
+      isOpen: true,
+      type: 'danger',
+      title: 'Delete Outpass Request',
+      message: `Are you sure you want to delete this outpass request? This action cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmationModal(prev => ({ ...prev, isLoading: true }));
+        
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) return;
+
+          // Use the backend API instead of direct Supabase query to handle user ID mapping correctly
+          const response = await fetch(`${API_BASE_URL}/api/outpass/${request.id}/cancel`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Error deleting outpass request:', error);
+            showError(error.message || 'Failed to delete outpass request', {
+              duration: 4000,
+              title: 'Delete Failed!'
+            });
+            return;
+          }
+
+          // Refresh the outpass requests list
+          fetchLeaveRequests();
+          showSuccess('Outpass request deleted successfully', {
+            duration: 3000,
+            title: 'Request Deleted!'
+          });
+          
+          // Close the modal
+          setConfirmationModal({ isOpen: false, type: 'danger', title: '', message: '', onConfirm: null, isLoading: false });
+        } catch (error) {
+          console.error('Error deleting outpass request:', error);
+          showError('Failed to delete outpass request', {
+            duration: 4000,
+            title: 'Delete Failed!'
+          });
+        } finally {
+          setConfirmationModal(prev => ({ ...prev, isLoading: false }));
+        }
+      },
+      isLoading: false
+    });
+  };
+
+  // Edit outpass request (pending and rejected only)
+  const handleEditOutpass = async (request) => {
+    if (request.status !== 'pending' && request.status !== 'rejected') {
+      showWarning('Only pending and rejected outpass requests can be edited', {
+        duration: 4000,
+        title: 'Cannot Edit!'
+      });
+      return;
+    }
+    
+    setEditingOutpass(request);
+    setShowEditOutpassModal(true);
+  };
+
+  // Extend outpass request (approved only)
+  const handleExtendOutpass = async (request) => {
+    if (request.status !== 'approved') {
+      showWarning('Only approved outpass requests can be extended', {
+        duration: 4000,
+        title: 'Cannot Extend!'
+      });
+      return;
+    }
+    
+    setExtendingOutpass(request);
+    setShowExtendOutpassModal(true);
+  };
+
+  // Update outpass request
+  const handleUpdateOutpass = async (formData) => {
     setIsSubmitting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const { error } = await supabase
-        .from('leave_requests')
-        .delete()
-        .eq('id', request.id)
-        .eq('user_id', session.user.id) // Ensure user owns the request
-        .eq('status', 'pending'); // Only allow deleting pending requests
+      const response = await fetch(`${API_BASE_URL}/api/outpass/${editingOutpass.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+      });
 
-      if (error) {
-        console.error('Error deleting leave request:', error);
-        alert(error.message || 'Failed to delete leave request');
-        return;
+      if (response.ok) {
+        setShowEditOutpassModal(false);
+        setEditingOutpass(null);
+        fetchLeaveRequests();
+        showSuccess('Outpass request updated successfully!', {
+          duration: 4000,
+          title: 'Request Updated! ✨'
+        });
+      } else {
+        const error = await response.json();
+        showError(error.message || 'Failed to update outpass request', {
+          duration: 5000,
+          title: 'Update Failed!'
+        });
       }
-
-      fetchLeaveRequests();
-      alert('Leave request deleted successfully');
     } catch (error) {
-      console.error('Error deleting leave request:', error);
-      alert('Failed to delete leave request');
+      console.error('Error updating outpass request:', error);
+      showError('Failed to update outpass request', {
+        duration: 5000,
+        title: 'Update Failed!'
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+
+  // Extend outpass request
+  const handleExtendOutpassRequest = async (formData) => {
+    setIsSubmitting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`${API_BASE_URL}/api/outpass/${extendingOutpass.id}/extend`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+      });
+
+      if (response.ok) {
+        setShowExtendOutpassModal(false);
+        setExtendingOutpass(null);
+        fetchLeaveRequests();
+        showSuccess('Outpass extension request submitted successfully!', {
+          duration: 4000,
+          title: 'Extension Requested! 🎉'
+        });
+      } else {
+        const error = await response.json();
+        showError(error.message || 'Failed to submit extension request', {
+          duration: 5000,
+          title: 'Extension Failed!'
+        });
+      }
+    } catch (error) {
+      console.error('Error extending outpass request:', error);
+      showError('Failed to submit extension request', {
+        duration: 5000,
+        title: 'Extension Failed!'
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -2623,7 +2954,7 @@ const StudentDashboard = () => {
       case 'complaints':
         return <StudentComplaints />;
       case 'leave':
-        return <StudentLeaveRequest />;
+        return renderLeaveRequests();
       case 'profile':
         return renderProfile();
       default:
@@ -2632,30 +2963,34 @@ const StudentDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50 to-amber-50 flex">
       {/* Sidebar Navigation */}
-      <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40">
+      <div className="w-64 bg-gradient-to-b from-white to-orange-50 shadow-2xl border-r border-orange-200 fixed h-full z-10">
         {/* Logo */}
-        <div className="p-6 border-b border-amber-200/50">
+        <div className="p-6 border-b border-orange-200">
           <button 
             onClick={() => setActiveTab('overview')} 
-            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+            className="flex items-center space-x-3 group hover:opacity-90 transition-opacity"
           >
-            <div className="w-10 h-10 bg-gradient-to-r from-amber-500 to-orange-500 rounded-lg flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300">
+              <Building2 className="w-7 h-7 text-white animate-pulse" />
             </div>
             <div>
-              <span className="text-xl font-bold text-slate-900">HostelHaven</span>
-              <div className="text-xs text-slate-500">Student Portal</div>
+              <span className="text-xl font-extrabold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">HostelHaven</span>
+              <div className="text-xs text-orange-600 font-semibold">Student Portal</div>
             </div>
           </button>
         </div>
 
         {/* User Profile */}
-        <div className="p-6 border-b border-amber-200/50">
+        <div className="p-6 border-b border-orange-200">
           <div className="flex items-center space-x-4">
             <div className="relative group">
-              <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-0.5 shadow-lg hover:shadow-xl transition-all duration-300">
+              <div 
+                className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-orange-400 via-amber-500 to-yellow-500 p-0.5 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:scale-105"
+                onClick={handleAvatarSelect}
+                title="Click to update profile picture"
+              >
                 <div className="w-full h-full rounded-full overflow-hidden bg-white p-0.5">
                   {user?.avatar_url ? (
                     <img 
@@ -2664,22 +2999,32 @@ const StudentDashboard = () => {
                       className="w-full h-full object-cover rounded-full transition-all duration-300 group-hover:scale-105 group-hover:brightness-110" 
                     />
                   ) : (
-                    <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center group-hover:from-amber-600 group-hover:to-orange-700 transition-all duration-300">
+                    <div className="w-full h-full rounded-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center group-hover:from-orange-600 group-hover:to-amber-700 transition-all duration-300">
                       <User className="w-8 h-8 text-white" />
                     </div>
                   )}
                 </div>
               </div>
+              {/* Upload button overlay for sidebar */}
+              <button
+                type="button"
+                onClick={handleAvatarSelect}
+                disabled={isUploadingAvatar}
+                className="absolute -bottom-1 -left-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white rounded-full p-2 shadow-lg transform hover:scale-110 transition-all duration-200 opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Update profile picture"
+              >
+                {isUploadingAvatar ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
+              </button>
               {/* Online status indicator */}
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full flex items-center justify-center shadow-sm">
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full flex items-center justify-center shadow-lg animate-heartbeat">
                 <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
               </div>
               {/* Hover effect ring */}
-              <div className="absolute inset-0 rounded-full border-2 border-transparent group-hover:border-amber-300 transition-all duration-300"></div>
+              <div className="absolute inset-0 rounded-full border-2 border-transparent group-hover:border-orange-300 transition-all duration-300"></div>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-slate-900 truncate">{user.fullName}</p>
-              <p className="text-sm text-slate-600 font-medium">Student</p>
+              <p className="font-bold text-slate-900 truncate">{user.fullName}</p>
+              <p className="text-sm text-orange-600 font-semibold">Student</p>
               <p className="text-xs text-slate-500 truncate">{user.email}</p>
             </div>
           </div>
@@ -2692,14 +3037,14 @@ const StudentDashboard = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors text-left ${
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left transform hover:scale-105 ${
                   activeTab === tab.id
-                    ? 'bg-amber-600 text-white shadow-lg'
-                    : 'text-slate-600 hover:bg-amber-50 hover:text-amber-700'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-xl animate-slideInRight'
+                    : 'text-gray-600 hover:bg-gradient-to-r hover:from-orange-50 hover:to-amber-50'
                 }`}
               >
-                <tab.icon className="w-5 h-5" />
-                <span className="font-medium">{tab.label}</span>
+                <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'animate-pulse' : ''}`} />
+                <span className="font-semibold">{tab.label}</span>
               </button>
             ))}
           </div>
@@ -2709,10 +3054,10 @@ const StudentDashboard = () => {
         <div className="absolute bottom-6 left-4 right-4">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center space-x-3 px-4 py-3 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 rounded-xl transition-all duration-300 transform hover:scale-105 border border-gray-200 hover:border-red-300"
           >
             <LogOut className="w-5 h-5" />
-            <span className="font-medium">Logout</span>
+            <span className="font-semibold">Logout</span>
           </button>
         </div>
       </div>
@@ -2720,16 +3065,27 @@ const StudentDashboard = () => {
       {/* Main Content */}
       <div className="flex-1 ml-64">
         {/* Top Header */}
-        <header className="bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-              <Users className="w-6 h-6 text-white" />
-            </div>
+        <header className="bg-gradient-to-r from-white via-orange-50 to-amber-50 shadow-lg p-6 border-b-2 border-orange-200">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-slate-800">
+              <h1 className="text-4xl font-extrabold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">
                 {tabs.find(tab => tab.id === activeTab)?.label || 'Dashboard'}
               </h1>
-              <p className="text-slate-600">Manage your hostel experience</p>
+              <p className="text-sm text-gray-600 mt-1">Manage your hostel experience</p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <p className="font-bold text-gray-900">{user.fullName || 'Student'}</p>
+                <p className="text-sm text-gray-500 font-semibold">Student Account</p>
+              </div>
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full blur-md opacity-50 group-hover:opacity-75 transition-opacity animate-pulse"></div>
+                <div className="relative w-14 h-14 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
+                  <span className="text-white font-extrabold text-lg">
+                    {user.fullName?.charAt(0) || 'S'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </header>
@@ -2744,9 +3100,52 @@ const StudentDashboard = () => {
 
       {/* Modals */}
       <ComplaintModal />
-      <LeaveRequestModal />
+      <OutpassModal 
+        isOpen={showOutpassModal}
+        onClose={() => setShowOutpassModal(false)}
+        onSuccess={() => {
+          fetchLeaveRequests();
+          setShowOutpassModal(false);
+        }}
+      />
+      
+      {/* Edit Outpass Modal */}
+      {showEditOutpassModal && editingOutpass && (
+        <OutpassModal 
+          isOpen={showEditOutpassModal}
+          onClose={() => {
+            setShowEditOutpassModal(false);
+            setEditingOutpass(null);
+          }}
+          onSuccess={() => {
+            fetchLeaveRequests();
+            setShowEditOutpassModal(false);
+            setEditingOutpass(null);
+          }}
+          editMode={true}
+          editingRequest={editingOutpass}
+        />
+      )}
+      
+      {/* Extend Outpass Modal */}
+      {showExtendOutpassModal && extendingOutpass && (
+        <OutpassModal 
+          isOpen={showExtendOutpassModal}
+          onClose={() => {
+            setShowExtendOutpassModal(false);
+            setExtendingOutpass(null);
+          }}
+          onSuccess={() => {
+            fetchLeaveRequests();
+            setShowExtendOutpassModal(false);
+            setExtendingOutpass(null);
+          }}
+          extendMode={true}
+          extendingRequest={extendingOutpass}
+        />
+      )}
+      
       <EditComplaintModal />
-      <EditLeaveModal />
       
       {/* Payment Modal */}
       {showPaymentModal && selectedPayment && (
@@ -2869,8 +3268,30 @@ const StudentDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Razorpay Payment Modal */}
+      {showRazorpayModal && selectedPayment && (
+        <RazorpayPaymentModal
+          payment={selectedPayment}
+          onClose={handleRazorpayClose}
+          onSuccess={handleRazorpaySuccess}
+        />
+      )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmationModal.isOpen}
+        onClose={() => setConfirmationModal({ isOpen: false, type: 'danger', title: '', message: '', onConfirm: null, isLoading: false })}
+        onConfirm={confirmationModal.onConfirm}
+        title={confirmationModal.title}
+        message={confirmationModal.message}
+        type={confirmationModal.type}
+        isLoading={confirmationModal.isLoading}
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
     </div>
   );
-};
+}
 
-export default StudentDashboard; 
+export default StudentDashboard;

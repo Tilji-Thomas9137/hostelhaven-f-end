@@ -26,6 +26,7 @@ const CleaningManagement = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -232,7 +233,7 @@ const CleaningManagement = () => {
       case 'pending':
         return 'bg-yellow-100 text-yellow-800';
       case 'assigned':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-orange-100 text-orange-800';
       case 'in_progress':
         return 'bg-purple-100 text-purple-800';
       case 'completed':
@@ -262,7 +263,7 @@ const CleaningManagement = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600"></div>
       </div>
     );
   }
@@ -277,7 +278,7 @@ const CleaningManagement = () => {
         <button
           onClick={handleRefresh}
           disabled={isRefreshing}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
@@ -292,8 +293,8 @@ const CleaningManagement = () => {
               <p className="text-sm font-medium text-slate-600">Total Requests</p>
               <p className="text-3xl font-bold text-slate-900">{stats.total_requests || 0}</p>
             </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-blue-600" />
+            <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+              <Sparkles className="w-6 h-6 text-orange-600" />
             </div>
           </div>
         </div>
@@ -384,7 +385,7 @@ const CleaningManagement = () => {
                           {request.status.replace('_', ' ')}
                         </span>
                         {request.preferred_time && (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
                             {request.preferred_time}
                           </span>
                         )}
@@ -506,10 +507,16 @@ const CleaningManagement = () => {
                         </button>
                       )}
 
-                      <button className="px-3 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors text-sm flex items-center space-x-1">
-                        <Eye className="w-4 h-4" />
-                        <span>View</span>
-                      </button>
+                                             <button 
+                         onClick={() => {
+                           setSelectedRequest(request);
+                           setShowViewModal(true);
+                         }}
+                         className="px-3 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors text-sm flex items-center space-x-1"
+                       >
+                         <Eye className="w-4 h-4" />
+                         <span>View</span>
+                       </button>
                     </div>
                   </div>
                 </div>
@@ -675,6 +682,182 @@ const CleaningManagement = () => {
                     'Update'
                   )}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Request Modal */}
+      {showViewModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full my-8">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                    <Home className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-slate-800">Cleaning Request Details</h3>
+                    <p className="text-sm text-slate-500">Request #{selectedRequest.id}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowViewModal(false);
+                    setSelectedRequest(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Status Badge */}
+                <div className="flex items-center space-x-3">
+                  <span className="px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">
+                    {selectedRequest.status.replace('_', ' ').toUpperCase()}
+                  </span>
+                  {selectedRequest.preferred_time && (
+                    <span className="px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">
+                      {selectedRequest.preferred_time}
+                    </span>
+                  )}
+                </div>
+
+                {/* Request Type */}
+                <div>
+                  <h4 className="text-lg font-semibold text-slate-800 mb-2 capitalize">
+                    {selectedRequest.cleaning_type} Cleaning
+                  </h4>
+                  <p className="text-slate-600">{selectedRequest.special_instructions || 'No special instructions provided'}</p>
+                </div>
+
+                {/* Student Information */}
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <h5 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+                    <User className="w-5 h-5 text-slate-600" />
+                    <span>Student Information</span>
+                  </h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-slate-600">Name</p>
+                      <p className="font-semibold text-slate-800">
+                        {selectedRequest.users?.full_name || selectedRequest.users?.email?.split('@')[0] || 'Unknown Student'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-600">Admission Number</p>
+                      <p className="font-semibold text-slate-800">
+                        {selectedRequest.users?.admission_number || 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-600">Email</p>
+                      <p className="font-semibold text-slate-800">
+                        {selectedRequest.users?.email || 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Room Information */}
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <h5 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+                    <Home className="w-5 h-5 text-slate-600" />
+                    <span>Room Information</span>
+                  </h5>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-slate-600">Room Number</p>
+                      <p className="font-semibold text-slate-800">
+                        {selectedRequest.rooms?.room_number || 'Unknown'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-600">Floor</p>
+                      <p className="font-semibold text-slate-800">
+                        {selectedRequest.rooms?.floor || 'Unknown'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-600">Room Type</p>
+                      <p className="font-semibold text-slate-800 capitalize">
+                        {selectedRequest.rooms?.room_type || 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dates */}
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <h5 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+                    <Calendar className="w-5 h-5 text-slate-600" />
+                    <span>Important Dates</span>
+                  </h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-slate-600">Requested Date</p>
+                      <p className="font-semibold text-slate-800">
+                        {selectedRequest.created_at ? new Date(selectedRequest.created_at).toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        }) : 'Unknown'}
+                      </p>
+                    </div>
+                    {selectedRequest.preferred_date && (
+                      <div>
+                        <p className="text-sm text-slate-600">Preferred Date</p>
+                        <p className="font-semibold text-slate-800">
+                          {new Date(selectedRequest.preferred_date).toLocaleDateString('en-US', { 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric' 
+                          })}
+                        </p>
+                      </div>
+                    )}
+                    {selectedRequest.completed_at && (
+                      <div>
+                        <p className="text-sm text-slate-600">Completed Date</p>
+                        <p className="font-semibold text-slate-800">
+                          {new Date(selectedRequest.completed_at).toLocaleDateString('en-US', { 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric' 
+                          })}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Notes */}
+                {selectedRequest.notes && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <h5 className="font-semibold text-amber-800 mb-2 flex items-center space-x-2">
+                      <AlertCircle className="w-5 h-5" />
+                      <span>Notes</span>
+                    </h5>
+                    <p className="text-amber-800">{selectedRequest.notes}</p>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200">
+                  <button
+                    onClick={() => {
+                      setShowViewModal(false);
+                      setSelectedRequest(null);
+                    }}
+                    className="px-6 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors font-semibold"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>

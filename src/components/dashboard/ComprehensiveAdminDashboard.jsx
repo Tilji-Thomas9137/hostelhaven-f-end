@@ -205,114 +205,159 @@ const ComprehensiveAdminDashboard = () => {
 
   const renderOverview = () => (
     <div className="space-y-8">
-      {/* KPI Cards */}
+      {/* Hero KPI Cards with Vibrant Design */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="relative overflow-hidden rounded-2xl bg-white shadow-lg border border-amber-200/50">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-50/70 to-transparent" />
-          <div className="relative p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Total Students</p>
-                <p className="text-3xl font-extrabold text-slate-900 tracking-tight">{dashboardData.stats?.totalStudents || 0}</p>
-                <p className="text-xs text-amber-600 font-medium">+12% from last month</p>
+        {/* Total Students Card */}
+        <div className="group relative overflow-hidden bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 rounded-3xl shadow-2xl p-8 transform hover:scale-105 transition-all duration-500">
+          {/* Animated Background Pattern */}
+          <div className="absolute inset-0 opacity-30">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse"></div>
+            <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse delay-700"></div>
+          </div>
+          
+          <div className="relative z-10">
+            <div className="flex items-start justify-between mb-6">
+              <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform duration-300">
+                <Users className="w-8 h-8 text-white" />
               </div>
-              <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
-                <Users className="w-6 h-6 text-amber-600" />
+              <div className="px-3 py-1 bg-green-500 rounded-full animate-pulse">
+                <span className="text-xs font-bold text-white">+12%</span>
               </div>
             </div>
+            <h3 className="text-white/90 text-sm font-semibold uppercase tracking-wide mb-2">Total Students</h3>
+            <p className="text-5xl font-black text-white mb-2">{dashboardData.stats?.totalStudents || 0}</p>
+            <p className="text-white/80 text-sm font-medium">from last month</p>
           </div>
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl bg-white shadow-lg border border-amber-200/50">
-          <div className="absolute inset-0 bg-gradient-to-br from-orange-50/70 to-transparent" />
-          <div className="relative p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Total Rooms</p>
-                <p className="text-3xl font-extrabold text-slate-900 tracking-tight">{dashboardData.stats?.totalRooms || 0}</p>
-                <p className="text-xs text-slate-500">Available: {dashboardData.stats?.totalRooms - Math.floor(dashboardData.stats?.totalStudents / 2) || 0}</p>
-              </div>
-              <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
-                <Home className="w-6 h-6 text-orange-600" />
+        {/* Total Rooms Card */}
+        <div className="group relative overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-green-600 rounded-3xl shadow-2xl p-8 transform hover:scale-105 transition-all duration-500">
+          <div className="absolute inset-0 opacity-30">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse delay-300"></div>
+            <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse delay-500"></div>
+          </div>
+          
+          <div className="relative z-10">
+            <div className="flex items-start justify-between mb-6">
+              <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform duration-300">
+                <Home className="w-8 h-8 text-white" />
               </div>
             </div>
+            <h3 className="text-white/90 text-sm font-semibold uppercase tracking-wide mb-2">Total Rooms</h3>
+            <p className="text-5xl font-black text-white mb-2">{dashboardData.stats?.totalRooms || 0}</p>
+            <p className="text-white/80 text-sm font-medium">
+              Available: {dashboardData.stats?.totalRooms - Math.floor(dashboardData.stats?.totalStudents / 2) || 0}
+            </p>
           </div>
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl bg-white shadow-lg border border-amber-200/50">
-          <div className="absolute inset-0 bg-gradient-to-br from-yellow-50/70 to-transparent" />
-          <div className="relative p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Total Revenue</p>
-                <p className="text-3xl font-extrabold text-slate-900 tracking-tight">₹{dashboardData.stats?.totalRevenue?.toLocaleString() || 0}</p>
-                <p className="text-xs text-yellow-600 font-medium">+8% from last month</p>
+        {/* Total Revenue Card */}
+        <div className="group relative overflow-hidden bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-600 rounded-3xl shadow-2xl p-8 transform hover:scale-105 transition-all duration-500">
+          <div className="absolute inset-0 opacity-30">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse delay-500"></div>
+            <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse delay-700"></div>
+          </div>
+          
+          <div className="relative z-10">
+            <div className="flex items-start justify-between mb-6">
+              <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform duration-300">
+                <DollarSign className="w-8 h-8 text-white" />
               </div>
-              <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-yellow-600" />
+              <div className="px-3 py-1 bg-green-500 rounded-full animate-pulse">
+                <span className="text-xs font-bold text-white">+8%</span>
               </div>
             </div>
+            <h3 className="text-white/90 text-sm font-semibold uppercase tracking-wide mb-2">Total Revenue</h3>
+            <p className="text-4xl font-black text-white mb-2">₹{dashboardData.stats?.totalRevenue?.toLocaleString() || 0}</p>
+            <p className="text-white/80 text-sm font-medium">from last month</p>
           </div>
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl bg-white shadow-lg border border-amber-200/50">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-50/70 to-transparent" />
-          <div className="relative p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Pending Issues</p>
-                <p className="text-3xl font-extrabold text-slate-900 tracking-tight">{dashboardData.stats?.pendingIssues || 0}</p>
-                <p className="text-xs text-amber-600 font-medium">Requires attention</p>
+        {/* Pending Issues Card */}
+        <div className="group relative overflow-hidden bg-gradient-to-br from-red-500 via-pink-500 to-rose-600 rounded-3xl shadow-2xl p-8 transform hover:scale-105 transition-all duration-500">
+          <div className="absolute inset-0 opacity-30">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse delay-700"></div>
+            <div className="absolute bottom-0 left-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse"></div>
+          </div>
+          
+          <div className="relative z-10">
+            <div className="flex items-start justify-between mb-6">
+              <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform duration-300">
+                <AlertCircle className="w-8 h-8 text-white" />
               </div>
-              <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
-                <AlertCircle className="w-6 h-6 text-amber-600" />
-              </div>
+              {(dashboardData.stats?.pendingIssues || 0) > 0 && (
+                <div className="px-3 py-1 bg-orange-500 rounded-full animate-heartbeat">
+                  <span className="text-xs font-bold text-white">!</span>
+                </div>
+              )}
             </div>
+            <h3 className="text-white/90 text-sm font-semibold uppercase tracking-wide mb-2">Pending Issues</h3>
+            <p className="text-5xl font-black text-white mb-2">{dashboardData.stats?.pendingIssues || 0}</p>
+            <p className="text-white/80 text-sm font-medium">Requires attention</p>
           </div>
         </div>
       </div>
 
-      {/* Quick Actions + Activity */}
+      {/* Quick Actions + Activity with Enhanced Design */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-2xl shadow-lg border border-amber-200/50">
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">Quick Actions</h3>
-            <div className="flex flex-wrap gap-3">
-              <button className="inline-flex items-center gap-2 rounded-lg bg-amber-600 text-white px-4 py-2 hover:bg-amber-700 transition-colors">
-                <Plus className="w-4 h-4" /> Add Student
-              </button>
-              <button className="inline-flex items-center gap-2 rounded-lg bg-orange-600 text-white px-4 py-2 hover:bg-orange-700 transition-colors">
-                <Bed className="w-4 h-4" /> Allocate Room
-              </button>
-              <button className="inline-flex items-center gap-2 rounded-lg bg-yellow-600 text-white px-4 py-2 hover:bg-yellow-700 transition-colors">
-                <CreditCard className="w-4 h-4" /> Record Payment
-              </button>
-              <button className="inline-flex items-center gap-2 rounded-lg bg-slate-800 text-white px-4 py-2 hover:bg-slate-900 transition-colors">
-                <FileText className="w-4 h-4" /> Export Report
-              </button>
+        {/* Quick Actions Card */}
+        <div className="lg:col-span-2 bg-white rounded-3xl shadow-xl border border-orange-100 p-8">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-500 rounded-2xl flex items-center justify-center shadow-lg">
+              <Activity className="w-6 h-6 text-white" />
             </div>
+            <div>
+              <h3 className="text-2xl font-extrabold text-gray-900">Quick Actions</h3>
+              <p className="text-sm text-gray-500 font-semibold">Manage your operations</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <button className="group inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-600 text-white px-6 py-3 hover:shadow-xl transition-all duration-300 transform hover:scale-105 font-semibold shadow-lg">
+              <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" /> 
+              Add Student
+            </button>
+            <button className="group inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-6 py-3 hover:shadow-xl transition-all duration-300 transform hover:scale-105 font-semibold shadow-lg">
+              <Bed className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" /> 
+              Allocate Room
+            </button>
+            <button className="group inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 text-white px-6 py-3 hover:shadow-xl transition-all duration-300 transform hover:scale-105 font-semibold shadow-lg">
+              <CreditCard className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" /> 
+              Record Payment
+            </button>
+            <button className="group inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-slate-700 to-slate-900 text-white px-6 py-3 hover:shadow-xl transition-all duration-300 transform hover:scale-105 font-semibold shadow-lg">
+              <FileText className="w-5 h-5 group-hover:rotate-12 transition-transform duration-300" /> 
+              Export Report
+            </button>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-lg border border-amber-200/50">
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-slate-800 mb-6">Recent Activity</h3>
-            <div className="space-y-4">
-              {dashboardData.students?.slice(0, 6).map((student, index) => (
-                <div key={index} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:bg-slate-50 transition-colors">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <UserPlus className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-800">New student registered: {student.student_name}</p>
-                    <p className="text-xs text-slate-500">{student.created_at ? new Date(student.created_at).toLocaleDateString() : '—'}</p>
-                  </div>
-                </div>
-              ))}
-              {dashboardData.students?.length === 0 && (
-                <p className="text-slate-500 text-center py-4">No recent activity</p>
-              )}
+        {/* Recent Activity Card */}
+        <div className="bg-white rounded-3xl shadow-xl border border-amber-100 p-8">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-lg">
+              <Clock className="w-6 h-6 text-white" />
             </div>
+            <div>
+              <h3 className="text-2xl font-extrabold text-gray-900">Recent Activity</h3>
+              <p className="text-sm text-gray-500 font-semibold">Latest updates</p>
+            </div>
+          </div>
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {dashboardData.students?.slice(0, 6).map((student, index) => (
+              <div key={index} className="group relative overflow-hidden flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100 hover:shadow-lg transition-all duration-300 transform hover:scale-[1.02] animate-fadeIn" style={{ animationDelay: `${index * 100}ms` }}>
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform duration-300">
+                  <UserPlus className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-gray-900">New student registered</p>
+                  <p className="text-xs font-semibold text-blue-600">{student.student_name}</p>
+                  <p className="text-xs text-gray-500 mt-1">{student.created_at ? new Date(student.created_at).toLocaleDateString() : '—'}</p>
+                </div>
+              </div>
+            ))}
+            {dashboardData.students?.length === 0 && (
+              <p className="text-gray-500 text-center py-8 font-semibold">No recent activity</p>
+            )}
           </div>
         </div>
       </div>
@@ -407,7 +452,7 @@ const ComprehensiveAdminDashboard = () => {
           <div className="p-6">
             <h3 className="text-lg font-semibold text-slate-800 mb-4">Recent Notifications</h3>
             <div className="space-y-3">
-              <div className="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+              <div className="p-3 bg-orange-50 rounded-lg border-l-4 border-orange-500">
                 <p className="text-sm font-medium text-slate-800">New student registration</p>
                 <p className="text-xs text-slate-500">2 minutes ago</p>
               </div>
@@ -482,43 +527,48 @@ const ComprehensiveAdminDashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50 to-amber-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600 text-lg font-medium">Loading admin dashboard...</p>
+          <div className="relative">
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-orange-500 absolute top-0 left-1/2 transform -translate-x-1/2"></div>
+          </div>
+          <p className="text-gray-700 font-semibold text-lg mt-4 animate-pulse">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
-      {/* Top Header */}
-      <div className="sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-amber-200/50 animate-fade-in">
-        <div className="px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Logo size="md" animated={true} standalone={true} />
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50 to-amber-50">
+      {/* Top Header with Enhanced Design */}
+      <div className="sticky top-0 z-30 bg-gradient-to-r from-white via-orange-50 to-amber-50 shadow-lg border-b-2 border-orange-200">
+        <div className="px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <BarChart3 className="w-7 h-7 text-white animate-pulse" />
+            </div>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">Admin Dashboard</h1>
-              <p className="text-xs md:text-sm text-slate-500">Manage hostel operations efficiently</p>
+              <h1 className="text-2xl md:text-3xl font-extrabold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent tracking-tight">Admin Dashboard</h1>
+              <p className="text-xs md:text-sm text-gray-600 font-semibold">Manage hostel operations efficiently</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm transition-base focus-within:border-blue-300">
-              <Search className="w-4 h-4 text-slate-400" />
+            <div className="hidden md:flex items-center gap-2 bg-white/80 backdrop-blur-sm border border-orange-200 rounded-xl px-4 py-2 shadow-md hover:shadow-lg transition-all duration-200 focus-within:border-orange-400">
+              <Search className="w-4 h-4 text-orange-500" />
               <input
                 type="text"
                 placeholder="Search students, rooms, payments..."
-                className="outline-none text-sm text-slate-700 placeholder:text-slate-400"
+                className="outline-none text-sm text-gray-700 placeholder:text-gray-400 bg-transparent"
               />
             </div>
             <button
               onClick={fetchDashboardData}
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors active:scale-[0.98]"
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-xl hover:from-orange-600 hover:to-amber-600 transition-all duration-300 transform hover:scale-105 shadow-lg active:scale-[0.98]"
             >
               <Activity className="w-4 h-4" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span className="hidden sm:inline font-semibold">Refresh</span>
             </button>
             <NotificationBell userId={user?.id} />
           </div>
@@ -526,42 +576,51 @@ const ComprehensiveAdminDashboard = () => {
       </div>
 
       <div className="flex">
-        {/* Sidebar */}
-        <aside className="w-64 shrink-0 bg-white/90 backdrop-blur border-r border-amber-200/50 min-h-[calc(100vh-60px)] hidden md:flex md:flex-col animate-slide-up">
-          <div className="p-4">
-            <p className="px-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">Navigation</p>
+        {/* Sidebar with Enhanced Design */}
+        <aside className="w-64 shrink-0 bg-gradient-to-b from-white to-orange-50 backdrop-blur border-r border-orange-200 shadow-2xl min-h-[calc(100vh-80px)] hidden md:flex md:flex-col">
+          <div className="p-6 border-b border-orange-200">
+            <div className="flex items-center space-x-3 group">
+              <div className="w-10 h-10 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <span className="text-lg font-extrabold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">HostelHaven</span>
+                <div className="text-xs text-orange-600 font-semibold">Admin Portal</div>
+              </div>
+            </div>
           </div>
-          <nav className="px-3 space-y-1 flex-1">
+          
+          <nav className="p-4 space-y-2 flex-1">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                className={`group w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left transform hover:scale-105 ${
                   activeTab === tab.id
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-xl animate-slideInRight'
+                    : 'text-gray-700 hover:bg-gradient-to-r hover:from-orange-50 hover:to-amber-50'
                 }`}
               >
-                <span className={`h-6 w-1 rounded-full ${activeTab === tab.id ? 'bg-blue-600' : 'bg-transparent group-hover:bg-slate-200'}`} />
-                <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'text-blue-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
-                <span className="font-medium">{tab.label}</span>
+                <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'animate-pulse' : ''}`} />
+                <span className="font-semibold">{tab.label}</span>
               </button>
             ))}
           </nav>
-          <div className="p-4 border-t border-slate-200">
+          
+          <div className="p-4 border-t border-blue-200">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors active:scale-[0.98]"
+              className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 rounded-xl transition-all duration-300 transform hover:scale-105 border border-gray-200 hover:border-red-300"
             >
               <LogOut className="w-5 h-5" />
-              <span className="font-medium">Logout</span>
+              <span className="font-semibold">Logout</span>
             </button>
           </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-4 md:p-6 space-y-6">
-          <div className="animate-slide-up animate-fade-in">
+        <main className="flex-1 p-6 space-y-6">
+          <div className="animate-fadeIn">
             {renderContent()}
           </div>
         </main>

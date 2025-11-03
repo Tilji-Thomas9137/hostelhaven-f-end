@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useNotification } from '../../contexts/NotificationContext';
 import { 
   Users, Plus, Search, Filter, Eye, Edit, Trash2, CheckCircle, X,
-  User, Mail, Phone, Calendar, MapPin, GraduationCap, Shield, Power, PowerOff
+  User, Mail, Phone, Calendar, MapPin, GraduationCap, Shield, Power, PowerOff, AlertCircle
 } from 'lucide-react';
 import ConfirmationModal from '../ui/ConfirmationModal';
 import ViewStudentModal from '../ui/ViewStudentModal';
@@ -29,7 +29,9 @@ const StudentManagement = ({ data = [], onRefresh }) => {
     isLoading: false
   });
 
-  const { register, handleSubmit, formState: { errors }, reset } = useForm();
+  const { register, handleSubmit, formState: { errors }, reset } = useForm({
+    mode: 'onChange'
+  });
 
   useEffect(() => {
     if (data) {
@@ -461,120 +463,265 @@ const StudentManagement = ({ data = [], onRefresh }) => {
         </div>
       </div>
 
-      {/* Add Student Drawer */}
+      {/* Add Student Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 pointer-events-none">
-          <div className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-white shadow-2xl border-l border-slate-200 animate-slide-in-right overflow-y-auto pointer-events-auto">
-            <div className="p-6 flex items-center justify-between border-b border-slate-200 animate-fade-in">
-              <h3 className="text-lg font-semibold text-slate-800">Add New Student</h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-[99999999] p-4 pt-16 isolate">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden relative z-[100000000] isolate mt-8">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-8 py-6 text-white flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="bg-white bg-opacity-20 p-2 rounded-lg">
+                    <User className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold">Add New Student</h3>
+                    <p className="text-blue-100">Complete student registration and profile setup</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleSubmit(onSubmitAdd)} className="p-6 space-y-6">
-              {/* Student Information */}
-              <div className="stagger-up">
-                <h4 className="text-md font-semibold text-slate-800 mb-4">Student Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      {...register('full_name', { required: 'Full name is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter full name"
-                    />
-                    {errors.full_name && (
-                      <p className="text-red-600 text-sm mt-1">{errors.full_name.message}</p>
-                    )}
-                  </div>
+            {/* Modal Body - Scrollable Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden bg-white scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100 hover:scrollbar-thumb-slate-400">
+              <div className="p-8">
+                <form id="add-student-form" onSubmit={handleSubmit(onSubmitAdd)} className="space-y-8">
+                  {/* Student Information Section */}
+                  <div className="bg-slate-50 rounded-xl p-6">
+                    <div className="flex items-center space-x-3 mb-6">
+                      <div className="bg-blue-100 p-2 rounded-lg">
+                        <User className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <h4 className="text-lg font-semibold text-slate-800">Student Information</h4>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Full Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        {...register('full_name', { 
+                          required: 'Full name is required',
+                          minLength: {
+                            value: 2,
+                            message: 'Full name must be at least 2 characters'
+                          },
+                          maxLength: {
+                            value: 50,
+                            message: 'Full name must not exceed 50 characters'
+                          },
+                          pattern: {
+                            value: /^[a-zA-Z\s]+$/,
+                            message: 'Full name can only contain letters and spaces'
+                          }
+                        })}
+                        className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                          errors.full_name ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                        }`}
+                        placeholder="Enter full name"
+                      />
+                      {errors.full_name && (
+                        <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4" />
+                          {errors.full_name.message}
+                        </p>
+                      )}
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Admission Number *
-                    </label>
-                    <input
-                      type="text"
-                      {...register('admission_number', { required: 'Admission number is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter admission number"
-                    />
-                    {errors.admission_number && (
-                      <p className="text-red-600 text-sm mt-1">{errors.admission_number.message}</p>
-                    )}
-                  </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Admission Number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        {...register('admission_number', { 
+                          required: 'Admission number is required',
+                          minLength: {
+                            value: 3,
+                            message: 'Admission number must be at least 3 characters'
+                          },
+                          maxLength: {
+                            value: 20,
+                            message: 'Admission number must not exceed 20 characters'
+                          },
+                          pattern: {
+                            value: /^[A-Za-z0-9]+$/,
+                            message: 'Admission number can only contain letters and numbers'
+                          }
+                        })}
+                        className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                          errors.admission_number ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                        }`}
+                        placeholder="Enter admission number"
+                      />
+                      {errors.admission_number && (
+                        <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4" />
+                          {errors.admission_number.message}
+                        </p>
+                      )}
+                    </div>
 
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Course *
-                    </label>
-                    <input
-                      type="text"
-                      {...register('course', { required: 'Course is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter course"
-                    />
-                    {errors.course && (
-                      <p className="text-red-600 text-sm mt-1">{errors.course.message}</p>
-                    )}
-                  </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Course <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        {...register('course', { 
+                          required: 'Course is required',
+                          minLength: {
+                            value: 2,
+                            message: 'Course must be at least 2 characters'
+                          },
+                          maxLength: {
+                            value: 30,
+                            message: 'Course must not exceed 30 characters'
+                          },
+                          pattern: {
+                            value: /^[A-Za-z\s.&]+$/,
+                            message: 'Course can only contain letters, spaces, dots, and ampersands'
+                          }
+                        })}
+                        className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                          errors.course ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                        }`}
+                        placeholder="Enter course (e.g., MCA, B.Tech)"
+                      />
+                      {errors.course && (
+                        <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4" />
+                          {errors.course.message}
+                        </p>
+                      )}
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Year *
-                    </label>
-                    <select
-                      {...register('year', { required: 'Year is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Select year</option>
-                      <option value="1">1st Year</option>
-                      <option value="2">2nd Year</option>
-                      <option value="3">3rd Year</option>
-                      <option value="4">4th Year</option>
-                    </select>
-                    {errors.year && (
-                      <p className="text-red-600 text-sm mt-1">{errors.year.message}</p>
-                    )}
-                  </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Year <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        {...register('year', { required: 'Year is required' })}
+                        className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                          errors.year ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                        }`}
+                      >
+                        <option value="">Select year</option>
+                        <option value="1">1st Year</option>
+                        <option value="2">2nd Year</option>
+                        <option value="3">3rd Year</option>
+                        <option value="4">4th Year</option>
+                      </select>
+                      {errors.year && (
+                        <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4" />
+                          {errors.year.message}
+                        </p>
+                      )}
+                    </div>
 
-                  <div>
-                <label className="block text-sm font-medium text-slate-600 mb-2">
-                  Student Email *
-                </label>
-                <input
-                  type="email"
-                  {...register('student_email', { required: 'Student email is required' })}
-                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter student email"
-                />
-                {errors.student_email && (
-                  <p className="text-red-600 text-sm mt-1">{errors.student_email.message}</p>
-                )}
-                <p className="text-xs text-slate-500 mt-1">Must be unique - not used by any existing user</p>
-              </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Student Email <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                        <input
+                          type="email"
+                          {...register('student_email', { 
+                            required: 'Student email is required',
+                            pattern: {
+                              value: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+                              message: 'Please enter a valid email address'
+                            },
+                            maxLength: {
+                              value: 100,
+                              message: 'Email must not exceed 100 characters'
+                            }
+                          })}
+                          className={`w-full pl-12 pr-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                            errors.student_email ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                          }`}
+                          placeholder="student@example.com"
+                        />
+                      </div>
+                      {errors.student_email && (
+                        <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4" />
+                          {errors.student_email.message}
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-500 mt-1">Must be unique - not used by any existing user</p>
+                    </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-2">
-                  Student WhatsApp Number *
-                </label>
-                <input
-                  type="tel"
-                  {...register('student_phone', { required: 'Student phone is required' })}
-                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter student WhatsApp number"
-                />
-                {errors.student_phone && (
-                  <p className="text-red-600 text-sm mt-1">{errors.student_phone.message}</p>
-                )}
-              </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Student WhatsApp Number <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                        <input
+                          type="tel"
+                          {...register('student_phone', { 
+                            required: 'Student phone number is required',
+                            pattern: {
+                              value: /^[6-9]\d{9}$/,
+                              message: 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9'
+                            },
+                            validate: {
+                              notRepeated: (value) => {
+                                const digits = value.split('');
+                                const uniqueDigits = new Set(digits);
+                                if (uniqueDigits.size <= 3) {
+                                  return 'Phone number cannot have more than 3 repeated digits';
+                                }
+                                return true;
+                              },
+                              notSequential: (value) => {
+                                const digits = value.split('').map(Number);
+                                let sequentialCount = 1;
+                                let maxSequential = 1;
+                                
+                                for (let i = 1; i < digits.length; i++) {
+                                  if (digits[i] === digits[i-1] + 1) {
+                                    sequentialCount++;
+                                    maxSequential = Math.max(maxSequential, sequentialCount);
+                                  } else {
+                                    sequentialCount = 1;
+                                  }
+                                }
+                                
+                                if (maxSequential >= 4) {
+                                  return 'Phone number cannot have 4 or more sequential digits';
+                                }
+                                return true;
+                              }
+                            }
+                          })}
+                          className={`w-full pl-12 pr-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                            errors.student_phone ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                          }`}
+                          placeholder="9876543210"
+                          maxLength={10}
+                        />
+                      </div>
+                      {errors.student_phone && (
+                        <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4" />
+                          {errors.student_phone.message}
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-500 mt-1">10-digit Indian mobile number only</p>
+                    </div>
                 </div>
               </div>
 
@@ -582,59 +729,143 @@ const StudentManagement = ({ data = [], onRefresh }) => {
               <div className="stagger-up">
                 <h4 className="text-md font-semibold text-slate-800 mb-4">Parent Information</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Parent Name *
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Parent Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
-                      {...register('parent_name', { required: 'Parent name is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      {...register('parent_name', { 
+                        required: 'Parent name is required',
+                        minLength: {
+                          value: 2,
+                          message: 'Parent name must be at least 2 characters'
+                        },
+                        maxLength: {
+                          value: 50,
+                          message: 'Parent name must not exceed 50 characters'
+                        },
+                        pattern: {
+                          value: /^[a-zA-Z\s]+$/,
+                          message: 'Parent name can only contain letters and spaces'
+                        }
+                      })}
+                      className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                        errors.parent_name ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                      }`}
                       placeholder="Enter parent name"
                     />
                     {errors.parent_name && (
-                      <p className="text-red-600 text-sm mt-1">{errors.parent_name.message}</p>
+                      <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.parent_name.message}
+                      </p>
                     )}
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Parent Phone *
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Parent Phone <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="tel"
-                      {...register('parent_phone', { required: 'Parent phone is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter parent phone"
-                    />
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                      <input
+                        type="tel"
+                        {...register('parent_phone', { 
+                          required: 'Parent phone number is required',
+                          pattern: {
+                            value: /^[6-9]\d{9}$/,
+                            message: 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9'
+                          },
+                          validate: {
+                            notRepeated: (value) => {
+                              const digits = value.split('');
+                              const uniqueDigits = new Set(digits);
+                              if (uniqueDigits.size <= 3) {
+                                return 'Phone number cannot have more than 3 repeated digits';
+                              }
+                              return true;
+                            },
+                            notSequential: (value) => {
+                              const digits = value.split('').map(Number);
+                              let sequentialCount = 1;
+                              let maxSequential = 1;
+                              
+                              for (let i = 1; i < digits.length; i++) {
+                                if (digits[i] === digits[i-1] + 1) {
+                                  sequentialCount++;
+                                  maxSequential = Math.max(maxSequential, sequentialCount);
+                                } else {
+                                  sequentialCount = 1;
+                                }
+                              }
+                              
+                              if (maxSequential >= 4) {
+                                return 'Phone number cannot have 4 or more sequential digits';
+                              }
+                              return true;
+                            }
+                          }
+                        })}
+                        className={`w-full pl-12 pr-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                          errors.parent_phone ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                        }`}
+                        placeholder="9876543210"
+                        maxLength={10}
+                      />
+                    </div>
                     {errors.parent_phone && (
-                      <p className="text-red-600 text-sm mt-1">{errors.parent_phone.message}</p>
+                      <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.parent_phone.message}
+                      </p>
                     )}
+                    <p className="text-xs text-slate-500 mt-1">10-digit Indian mobile number only</p>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Parent Email *
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Parent Email <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="email"
-                      {...register('parent_email', { required: 'Parent email is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter parent email"
-                    />
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                      <input
+                        type="email"
+                        {...register('parent_email', { 
+                          required: 'Parent email is required',
+                          pattern: {
+                            value: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+                            message: 'Please enter a valid email address'
+                          },
+                          maxLength: {
+                            value: 100,
+                            message: 'Email must not exceed 100 characters'
+                          }
+                        })}
+                        className={`w-full pl-12 pr-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                          errors.parent_email ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                        }`}
+                        placeholder="parent@example.com"
+                      />
+                    </div>
                     {errors.parent_email && (
-                      <p className="text-red-600 text-sm mt-1">{errors.parent_email.message}</p>
+                      <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.parent_email.message}
+                      </p>
                     )}
                     <p className="text-xs text-slate-500 mt-1">Must be unique - not used by any existing user</p>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-2">
-                      Parent Relation *
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Parent Relation <span className="text-red-500">*</span>
                     </label>
                     <select
                       {...register('parent_relation', { required: 'Parent relation is required' })}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${
+                        errors.parent_relation ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-300'
+                      }`}
                     >
                       <option value="">Select relation</option>
                       <option value="father">Father</option>
@@ -642,7 +873,10 @@ const StudentManagement = ({ data = [], onRefresh }) => {
                       <option value="guardian">Guardian</option>
                     </select>
                     {errors.parent_relation && (
-                      <p className="text-red-600 text-sm mt-1">{errors.parent_relation.message}</p>
+                      <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.parent_relation.message}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -666,43 +900,66 @@ const StudentManagement = ({ data = [], onRefresh }) => {
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3 animate-fade-in">
+                </form>
+              </div>
+            </div>
+
+            {/* Modal Footer - Fixed Buttons */}
+            <div className="flex-shrink-0 px-8 py-6 border-t border-slate-200 bg-slate-50">
+              <div className="flex justify-end space-x-4">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-6 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+                  className="px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 hover:border-slate-400 transition-all font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
+                  form="add-student-form"
                   disabled={isLoading}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isLoading ? 'Adding...' : 'Add Student'}
+                  <div className="flex items-center space-x-2">
+                    <Plus className="w-5 h-5" />
+                    <span>{isLoading ? 'Adding...' : 'Add Student'}</span>
+                  </div>
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Edit Student Drawer */}
+      {/* Edit Student Modal */}
       {showEditModal && selectedStudent && (
-        <div className="fixed inset-0 z-50 pointer-events-none">
-          <div className="absolute right-0 top-0 h-full w-full sm:w-[560px] bg-white shadow-2xl border-l border-slate-200 animate-slide-in-right overflow-y-auto pointer-events-auto">
-            <div className="p-6 flex items-center justify-between border-b border-slate-200 animate-fade-in">
-              <h3 className="text-lg font-semibold text-slate-800">Edit Student</h3>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-[99999999] p-4 pt-16 isolate">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden relative z-[100000000] isolate mt-8">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 px-8 py-6 text-white flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="bg-white bg-opacity-20 p-2 rounded-lg">
+                    <Edit className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold">Edit Student</h3>
+                    <p className="text-green-100">Update student information and profile</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleSubmit(onSubmitEdit)} className="p-6 space-y-6">
-              {/* Student Information */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden bg-white">
+              <div className="p-8">
+                <form id="edit-student-form" onSubmit={handleSubmit(onSubmitEdit)} className="space-y-6">
+                {/* Student Information */}
               <div className="stagger-up">
                 <h4 className="text-md font-semibold text-slate-800 mb-4">Student Information</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -874,6 +1131,32 @@ const StudentManagement = ({ data = [], onRefresh }) => {
                 </button>
               </div>
             </form>
+              </div>
+            </div>
+
+            {/* Modal Footer - Fixed Buttons */}
+            <div className="flex-shrink-0 px-8 py-6 border-t border-slate-200 bg-slate-50">
+              <div className="flex justify-end space-x-4">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 hover:border-slate-400 transition-all font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  form="edit-student-form"
+                  disabled={isLoading}
+                  className="px-8 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl hover:from-green-700 hover:to-green-800 transition-all font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-center space-x-2">
+                    <Edit className="w-5 h-5" />
+                    <span>{isLoading ? 'Updating...' : 'Update Student'}</span>
+                  </div>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

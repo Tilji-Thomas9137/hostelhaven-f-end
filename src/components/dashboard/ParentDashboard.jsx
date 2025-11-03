@@ -30,9 +30,11 @@ import {
   GraduationCap,
   Shield,
   Eye,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import ChatWidget from '../ui/ChatWidget';
+import RazorpayPaymentModal from '../ui/RazorpayPaymentModal';
 
 const ParentDashboard = () => {
   const navigate = useNavigate();
@@ -42,6 +44,7 @@ const ParentDashboard = () => {
   const [childInfo, setChildInfo] = useState(null);
   const [payments, setPayments] = useState([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showRazorpayModal, setShowRazorpayModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     payment_method: 'online',
@@ -183,7 +186,9 @@ const ParentDashboard = () => {
 
       if (response.ok) {
         const result = await response.json();
+        console.log('📊 Full API Response:', JSON.stringify(result, null, 2));
         const childData = result.data.child;
+        console.log('👤 Child Data:', childData);
 
         // Helpers for clean display
         const ordinal = (n) => {
@@ -197,13 +202,18 @@ const ParentDashboard = () => {
           return `${ordinal(yearNum)} Year`;
         };
         
+        console.log('🔍 Profile Data:', childData.profile);
+        console.log('🔍 Admission Number:', childData.profile.admission_number);
+        console.log('🔍 Course:', childData.profile.course);
+        console.log('🔍 Room Allocation:', childData.roomAllocation);
+        
         // Set real child information (single-hostel defaults)
         setChildInfo({
           name: childData.profile.users.full_name,
           age: calcAge(childData.profile.date_of_birth),
-          room: childData.profile.room_number || 'Not Assigned',
+          room: childData.roomAllocation?.rooms?.room_number || 'Not Assigned',
           hostel: 'HostelHaven',
-          floor: childData.profile.floor || 'N/A',
+          floor: childData.roomAllocation?.rooms?.floor || 'N/A',
           checkInDate: childData.profile.check_in_date || childData.profile.join_date || 'N/A',
           academicYear: childData.profile.academic_year || 'N/A',
           course: childData.profile.course || 'N/A',
@@ -330,6 +340,10 @@ const ParentDashboard = () => {
     }
   };
 
+  const fetchPayments = async () => {
+    // Placeholder for payment fetching
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
@@ -387,7 +401,9 @@ const ParentDashboard = () => {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-slate-600">Room</label>
-              <p className="text-lg font-semibold text-slate-800">{childInfo?.room}</p>
+              <p className={`text-lg font-semibold ${childInfo?.room === 'Not Assigned' ? 'text-red-600' : 'text-slate-800'}`}>
+                {childInfo?.room}
+              </p>
             </div>
             {/* Hostel hidden for single-hostel platform */}
             <div>
@@ -821,11 +837,20 @@ const ParentDashboard = () => {
 
   const handlePayNow = (payment) => {
     setSelectedPayment(payment);
-    setPaymentForm({
-      payment_method: 'online',
-      transaction_reference: ''
-    });
-    setShowPaymentModal(true);
+    // Show Razorpay modal for online payments
+    setShowRazorpayModal(true);
+  };
+
+  const handleRazorpaySuccess = (updatedPayment) => {
+    alert('Payment completed successfully!');
+    setShowRazorpayModal(false);
+    setSelectedPayment(null);
+    fetchPayments(); // Refresh payments
+  };
+
+  const handleRazorpayClose = () => {
+    setShowRazorpayModal(false);
+    setSelectedPayment(null);
   };
 
   const handlePaymentSubmit = async () => {
@@ -1097,6 +1122,15 @@ const ParentDashboard = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Razorpay Payment Modal */}
+      {showRazorpayModal && selectedPayment && (
+        <RazorpayPaymentModal
+          payment={selectedPayment}
+          onClose={handleRazorpayClose}
+          onSuccess={handleRazorpaySuccess}
+        />
       )}
     </div>
   );

@@ -18,7 +18,11 @@ import {
   MapPin,
   Filter,
   Search,
-  X
+  X,
+  Send,
+  Loader2,
+  FileText,
+  Droplet
 } from 'lucide-react';
 
 const StudentCleaningRequest = () => {
@@ -480,29 +484,48 @@ const StudentCleaningRequest = () => {
 
       {/* Enhanced Request Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-6 border-b border-amber-100 rounded-t-3xl">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl">
-                  <Plus className="w-6 h-6 text-white" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowModal(false)}
+          />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-amber-600 to-orange-600 text-white p-6 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Sparkles className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">New Cleaning Request</h2>
+                    <p className="text-amber-100 text-sm">Request cleaning services for your room</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-slate-800">New Cleaning Request</h3>
-                  <p className="text-slate-600 mt-1">Request cleaning services for your room</p>
-                </div>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
             </div>
-            
+
+            {/* Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-3">
-                  Cleaning Type
+              {/* Cleaning Type */}
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <Droplet className="w-4 h-4 text-blue-600" />
+                  Cleaning Type <span className="text-red-500">*</span>
                 </label>
                 <select
                   value={formData.cleaning_type}
                   onChange={(e) => setFormData(prev => ({ ...prev, cleaning_type: e.target.value }))}
-                  className="w-full px-4 py-4 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-slate-700 font-medium"
+                  className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 transition-all border-slate-300 focus:ring-amber-500/20 focus:border-amber-500 text-slate-700 font-medium"
                   required
                 >
                   <option value="general">🧹 General Cleaning</option>
@@ -512,70 +535,86 @@ const StudentCleaningRequest = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-3">
-                  Preferred Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.preferred_date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, preferred_date: e.target.value }))}
-                  className="w-full px-4 py-4 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-slate-700 font-medium"
-                  min={new Date().toISOString().split('T')[0]}
-                  required
-                />
+              {/* Date and Time */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Preferred Date */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <Calendar className="w-4 h-4 text-amber-600" />
+                    Preferred Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.preferred_date}
+                    onChange={(e) => setFormData(prev => ({ ...prev, preferred_date: e.target.value }))}
+                    className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 transition-all border-slate-300 focus:ring-amber-500/20 focus:border-amber-500 text-slate-700 font-medium"
+                    min={new Date().toISOString().split('T')[0]}
+                    required
+                  />
+                </div>
+
+                {/* Preferred Time */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <Clock className="w-4 h-4 text-green-600" />
+                    Preferred Time <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.preferred_time}
+                    onChange={(e) => setFormData(prev => ({ ...prev, preferred_time: e.target.value }))}
+                    className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 transition-all border-slate-300 focus:ring-amber-500/20 focus:border-amber-500 text-slate-700 font-medium"
+                    required
+                  >
+                    <option value="">Select Time Slot</option>
+                    <option value="morning">🌅 Morning (9:00 AM - 12:00 PM)</option>
+                    <option value="afternoon">☀️ Afternoon (12:00 PM - 3:00 PM)</option>
+                    <option value="evening">🌆 Evening (3:00 PM - 6:00 PM)</option>
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-3">
-                  Preferred Time
-                </label>
-                <select
-                  value={formData.preferred_time}
-                  onChange={(e) => setFormData(prev => ({ ...prev, preferred_time: e.target.value }))}
-                  className="w-full px-4 py-4 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-slate-700 font-medium"
-                  required
-                >
-                  <option value="">Select Time Slot</option>
-                  <option value="morning">🌅 Morning (9:00 AM - 12:00 PM)</option>
-                  <option value="afternoon">☀️ Afternoon (12:00 PM - 3:00 PM)</option>
-                  <option value="evening">🌆 Evening (3:00 PM - 6:00 PM)</option>
-                </select>
+              {/* Special Instructions */}
+              <div className="bg-amber-50 p-4 rounded-xl border border-amber-200">
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <FileText className="w-4 h-4 text-amber-600" />
+                    Special Instructions
+                    <span className="text-slate-500 text-xs font-normal ml-1">(Optional)</span>
+                  </label>
+                  <textarea
+                    value={formData.special_instructions}
+                    onChange={(e) => setFormData(prev => ({ ...prev, special_instructions: e.target.value }))}
+                    placeholder="Any special requirements or instructions..."
+                    className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 transition-all resize-none border-slate-300 focus:ring-amber-500/20 focus:border-amber-500 text-slate-700 font-medium"
+                    rows={4}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-3">
-                  Special Instructions (Optional)
-                </label>
-                <textarea
-                  value={formData.special_instructions}
-                  onChange={(e) => setFormData(prev => ({ ...prev, special_instructions: e.target.value }))}
-                  placeholder="Any special requirements or instructions..."
-                  className="w-full px-4 py-4 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-slate-700 font-medium resize-none"
-                  rows={4}
-                />
-              </div>
-
-              <div className="flex space-x-4 pt-6">
+              {/* Submit Button */}
+              <div className="flex gap-4 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-6 py-4 border-2 border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-all duration-200 font-semibold"
+                  className="flex-1 px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 px-6 py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-semibold shadow-lg"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl hover:from-amber-700 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (
-                    <div className="flex items-center justify-center space-x-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                      <span>Submitting...</span>
-                    </div>
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Submitting Request...
+                    </>
                   ) : (
-                    'Submit Request'
+                    <>
+                      <Send className="w-5 h-5" />
+                      Submit Cleaning Request
+                    </>
                   )}
                 </button>
               </div>

@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase } from '../lib/supabase';
 import { studentProfileSchema } from '../lib/validation';
 import { verifyAadharCard, saveAadharInfo, uploadAadharImage } from '../lib/aadharVerification';
+import useBeautifulToast from '../hooks/useBeautifulToast';
 import { Camera, Loader2, Upload, User, CheckCircle, XCircle, AlertCircle, Eye, EyeOff, Mail, Phone, GraduationCap, Calendar, MapPin, Users, Shield, Heart, Brain } from 'lucide-react';
 
 const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = false, showHeader = true }) => {
@@ -22,6 +23,7 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
   const [extractedAadharNumber, setExtractedAadharNumber] = useState('');
   const [verificationMessage, setVerificationMessage] = useState('');
   const fileInputRef = useRef(null);
+  const { showSuccess, showError, showWarning, showInfo } = useBeautifulToast();
 
   const {
     register,
@@ -339,7 +341,10 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
     } catch (err) {
       console.error('Failed to save profile:', err);
       // Show error to user
-      alert('Failed to save profile: ' + err.message);
+      showError(`Failed to save your profile: ${err.message}`, {
+        duration: 5000,
+        title: 'Save Failed!'
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -352,11 +357,17 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
       const file = event.target.files?.[0];
       if (!file) return;
       if (!file.type.startsWith('image/')) {
-        alert('Please select an image file.');
+        showError('Please select a valid image file (JPG, PNG, GIF, etc.)', {
+          duration: 4000,
+          title: 'Invalid File Type!'
+        });
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        alert('Image must be 5MB or less.');
+        showError('Image size must be 5MB or less. Please choose a smaller image.', {
+          duration: 4000,
+          title: 'File Too Large!'
+        });
         return;
       }
 
@@ -368,49 +379,47 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `${session.user.id}/${fileName}`;
 
-      // Try multiple buckets in case one doesn't exist
-      const candidateBuckets = [
-        (import.meta.env?.VITE_PROFILE_BUCKET || '').trim() || 'profile_picture',
-        'avatars',
-        'profile-photos',
-        'aadhar_verify'
-      ];
+      // Upload to the profile_picture bucket
+      const { error: uploadError } = await supabase.storage
+        .from('profile_picture')
+        .upload(filePath, file, { 
+          cacheControl: '3600', 
+          upsert: true 
+        });
 
-      let publicUrl = '';
-      let lastError = null;
-      for (const bucket of candidateBuckets) {
-        try {
-          const { error: upErr } = await supabase.storage
-            .from(bucket)
-            .upload(filePath, file, { cacheControl: '3600', upsert: true });
-          if (upErr) throw upErr;
-          const { data: pub } = supabase.storage.from(bucket).getPublicUrl(filePath);
-          publicUrl = pub.publicUrl;
-          break;
-        } catch (e) {
-          lastError = e;
-        }
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
-      if (!publicUrl) {
-        throw lastError || new Error('Failed to upload avatar');
-      }
+      const { data: { publicUrl } } = supabase.storage
+        .from('profile_picture')
+        .getPublicUrl(filePath);
 
       setAvatarUrl(publicUrl);
 
-      // Persist avatar immediately to backend and auth metadata
+      // Persist avatar_url immediately to user_profiles table
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-        await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
+        const response = await fetch(`${API_BASE_URL}/api/user-profiles/save`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`
           },
-          body: JSON.stringify({ avatar_url: publicUrl, status: 'complete', profile_status: 'active' })
+          body: JSON.stringify({ 
+            avatar_url: publicUrl, 
+            status: 'complete', 
+            profile_status: 'active' 
+          })
         });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.warn('Failed to persist avatar_url to user_profiles immediately:', errorData);
+        }
       } catch (e) {
-        console.warn('Failed to persist avatar to backend immediately:', e);
+        console.warn('Failed to persist avatar_url to user_profiles immediately:', e);
       }
 
       try {
@@ -418,9 +427,17 @@ const StudentProfileForm = ({ onSuccess, onCancel, initialData = null, isEdit = 
       } catch (e) {
         console.warn('Failed to update auth metadata avatar_url:', e);
       }
+
+      showSuccess('Your profile picture has been uploaded successfully! ✨', {
+        duration: 3000,
+        title: 'Picture Uploaded!'
+      });
     } catch (err) {
       console.error('Avatar upload failed:', err);
-      alert(`Avatar upload failed: ${err.message || 'Unknown error'}`);
+      showError(`Failed to upload your profile picture: ${err.message || 'Unknown error'}`, {
+        duration: 5000,
+        title: 'Upload Failed!'
+      });
     } finally {
       setIsUploading(false);
     }

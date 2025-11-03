@@ -43,6 +43,8 @@ import {
 import ChatWidget from '../ui/ChatWidget';
 import AdminCleaningAnalytics from '../AdminCleaningAnalytics';
 import AdminRoomAnalytics from '../AdminRoomAnalytics';
+import LeaveRequestManagement from './LeaveRequestManagement';
+import OutpassRequestManagement from './OutpassRequestManagement';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -151,8 +153,6 @@ const AdminDashboard = () => {
   const [paymentsStatusFilter, setPaymentsStatusFilter] = useState('');
   const [adminComplaintStatusFilter, setAdminComplaintStatusFilter] = useState('');
   const [roomsSearch, setRoomsSearch] = useState('');
-  const [leaveStatusFilter, setLeaveStatusFilter] = useState('');
-  const [leaveSearch, setLeaveSearch] = useState('');
   
   // Rooms & Allocations Dashboard states
   const [roomsData, setRoomsData] = useState([]);
@@ -222,7 +222,11 @@ const AdminDashboard = () => {
           
           // Allow admin, operations assistant, and warden to load dashboard data
           const role = (result.data.user.role || '').toLowerCase();
+          console.log('🔍 Admin Dashboard: User role detected:', role);
+          console.log('🔍 Admin Dashboard: User data:', result.data.user);
+          
           if (['admin', 'hostel_operations_assistant', 'warden'].includes(role)) {
+            console.log('✅ Admin Dashboard: User has admin privileges, loading data...');
             fetchDashboardStats();
             fetchStudents();
             // Skip hostels fetch for single-hostel system
@@ -234,7 +238,7 @@ const AdminDashboard = () => {
             fetchRoomsDashboardData();
             fetchRecentActivity();
           } else {
-            console.warn('User lacks admin privileges for full dashboard, role:', result.data.user.role);
+            console.warn('❌ Admin Dashboard: User lacks admin privileges for full dashboard, role:', result.data.user.role);
             setUser({ ...result.data.user, isNotAdmin: true });
           }
         } else {
@@ -1088,7 +1092,8 @@ const AdminDashboard = () => {
       params.set('limit', '20');
       if (adminComplaintStatusFilter) params.set('status', adminComplaintStatusFilter);
 
-      const response = await fetch(`http://localhost:3002/api/admin/complaints?${params.toString()}`, {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+      const response = await fetch(`${API_BASE_URL}/api/admin/complaints?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -1110,28 +1115,45 @@ const AdminDashboard = () => {
   const fetchLeaveRequests = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) {
+        console.log('❌ Admin: No session found');
+        return;
+      }
 
-      const params = new URLSearchParams();
-      params.set('limit', '20');
-      if (leaveStatusFilter) params.set('status', leaveStatusFilter);
+      console.log('🔍 Admin: Fetching outpass requests...');
+      console.log('🔍 Admin: User role:', user?.role);
+      console.log('🔍 Admin: Session token:', session.access_token ? 'Present' : 'Missing');
 
-      const response = await fetch(`http://localhost:3002/api/admin/leave-requests?${params.toString()}`, {
+      const response = await fetch(`http://localhost:3002/api/outpass/all`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        // Backend returns { data: { leaveRequests } }
-        setLeaveRequests(result.data.leaveRequests || []);
+      console.log('📡 Admin API response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Admin: Error fetching outpass requests:', response.status, errorText);
+        setLeaveRequests([]);
+        return;
+      }
+
+      const result = await response.json();
+      console.log('✅ Admin: Outpass requests API response:', result);
+
+      if (result.success) {
+        const requests = result.data || [];
+        console.log('📋 Admin: Number of outpass requests found:', requests.length);
+        console.log('📋 Admin: Sample request:', requests[0]);
+        setLeaveRequests(requests);
       } else {
+        console.error('❌ Admin: API error:', result.message);
         setLeaveRequests([]);
       }
     } catch (error) {
-      console.error('Error fetching leave requests:', error);
+      console.error('❌ Admin: Exception fetching outpass requests:', error);
       setLeaveRequests([]);
     }
   };
@@ -3945,140 +3967,45 @@ const AdminDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch(`http://localhost:3002/api/admin/leave-requests/${requestId}/status`, {
+      console.log('🔍 Admin: Updating outpass request status:', { requestId, status, notes });
+
+      const response = await fetch(`http://localhost:3002/api/outpass/${requestId}/status`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ status, notes })
+        body: JSON.stringify({ 
+          status, 
+          rejection_reason: status === 'rejected' ? notes : null,
+          approved_by: session.user.id
+        })
       });
 
+      console.log('📡 Admin: Status update response:', response.status);
+
       if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Admin: Status update successful:', result);
         fetchLeaveRequests();
-        alert(`Leave request ${status}`);
+        showNotification(`Outpass request ${status} successfully`, 'success');
       } else {
-        let errorMessage = 'Failed to update leave request';
+        const errorText = await response.text();
+        console.error('❌ Admin: Status update failed:', response.status, errorText);
+        let errorMessage = 'Failed to update outpass request';
         try {
-          const err = await response.json();
+          const err = JSON.parse(errorText);
           errorMessage = err.message || errorMessage;
         } catch (e) {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
-        alert(errorMessage);
+        showNotification(errorMessage, 'error');
       }
     } catch (e) {
-      console.error(e);
-      alert('Failed to update leave request');
+      console.error('❌ Admin: Exception updating outpass status:', e);
+      showNotification('Failed to update outpass request', 'error');
     }
   };
-
-  const renderLeaveRequests = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-800">Leave Requests</h2>
-        <div className="flex items-center space-x-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by reason or student..."
-              value={leaveSearch}
-              onChange={(e) => setLeaveSearch(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-            />
-          </div>
-          <select
-            value={leaveStatusFilter}
-            onChange={(e) => setLeaveStatusFilter(e.target.value)}
-            className="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-          >
-            <option value="">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-lg border border-amber-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Student</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Reason</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">From</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">To</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {leaveRequests
-                .filter((r) => {
-                  const q = leaveSearch.trim().toLowerCase();
-                  if (!q) return true;
-                  const student = r.users?.full_name?.toLowerCase() || '';
-                  const email = r.users?.email?.toLowerCase() || '';
-                  return r.reason.toLowerCase().includes(q) || student.includes(q) || email.includes(q);
-                })
-                .map((request) => (
-                <tr key={request.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mr-3">
-                        <User className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{request.users?.full_name || 'N/A'}</p>
-                        <p className="text-sm text-slate-500">{request.users?.email || ''}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{request.reason}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{request.start_date}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{request.end_date}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      request.status === 'approved' ? 'bg-green-100 text-green-800' : 
-                      request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {request.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center space-x-2">
-                      {request.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateLeaveStatus(request.id, 'approved')}
-                            className="text-green-600 hover:text-green-700"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleUpdateLeaveStatus(request.id, 'rejected')}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                      <button className="text-amber-600 hover:text-amber-700">
-                        <Eye className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
 
   const renderStudents = () => (
     <div className="space-y-6">
@@ -5228,7 +5155,30 @@ const AdminDashboard = () => {
       case 'complaints':
         return renderComplaints();
       case 'leave':
-        return renderLeaveRequests();
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-800">Outpass Requests</h2>
+                <p className="text-sm text-slate-600">
+                  User: {user?.email} | Role: {user?.role} | Requests: {leaveRequests?.length || 0}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  console.log('🔄 Manual refresh triggered');
+                  console.log('🔍 Current user:', user);
+                  console.log('🔍 Current leaveRequests:', leaveRequests);
+                  fetchLeaveRequests();
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Refresh Data
+              </button>
+            </div>
+            <OutpassRequestManagement data={leaveRequests} onRefresh={fetchLeaveRequests} />
+          </div>
+        );
       case 'payments':
         return renderPayments();
       case 'analytics':
@@ -5406,7 +5356,7 @@ const AdminDashboard = () => {
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">Price</p>
-                  <p className="text-slate-800 font-medium">{viewingRoom.price ? `$${viewingRoom.price}/month` : '-'}</p>
+                  <p className="text-slate-800 font-medium">{viewingRoom.price ? `₹${viewingRoom.price}/month` : '-'}</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500">Available Spots</p>
@@ -5837,7 +5787,7 @@ const AdminDashboard = () => {
                         <p><strong>Capacity:</strong> {selectedRoom.capacity} students</p>
                         <p><strong>Occupied:</strong> {selectedRoom.occupied} students</p>
                         <p><strong>Available Spots:</strong> {selectedRoom.capacity - selectedRoom.occupied}</p>
-                        <p><strong>Price:</strong> ${selectedRoom.price}/month</p>
+                        <p><strong>Price:</strong> ₹{selectedRoom.price}/month</p>
                         {selectedRoom.amenities && selectedRoom.amenities.length > 0 && (
                           <p><strong>Amenities:</strong> {selectedRoom.amenities.join(', ')}</p>
                         )}

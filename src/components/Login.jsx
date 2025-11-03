@@ -34,6 +34,7 @@ const Login = () => {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isValid }
   } = useForm({
     resolver: zodResolver(loginSchema),
@@ -114,7 +115,14 @@ const Login = () => {
       // Navigate based on user role
       const dashboardPath = getDashboardPath(user.role);
       console.log('🔍 Login: User role:', user.role, 'Dashboard path:', dashboardPath);
-      navigate(dashboardPath);
+      console.log('🔍 Login: Full user data:', user);
+      console.log('🔍 Login: Session data:', result.data.session);
+      
+      // Set a small delay to ensure session is properly set
+      setTimeout(() => {
+        console.log('🔍 Login: Navigating to:', dashboardPath);
+        navigate(dashboardPath);
+      }, 100);
     } catch (error) {
       console.error('Unexpected login error:', error);
       setError('An unexpected error occurred. Please try again.');
@@ -196,13 +204,17 @@ const Login = () => {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-amber-50">
       {/* Navigation */}
       <Navigation />
       
       {/* Main Content */}
-      <div className="pt-20 pb-8 flex items-center justify-center min-h-screen">
-        <div className="max-w-md w-full px-4">
+      <div className="relative flex items-center justify-center min-h-screen py-12 px-4">
+        {/* subtle animated accent */}
+        <div className="pointer-events-none absolute -z-10 h-56 w-56 rounded-full bg-amber-300/20 blur-3xl animate-pulse" style={{ top: '20%', left: '20%' }}></div>
+        <div className="pointer-events-none absolute -z-10 h-64 w-64 rounded-full bg-orange-300/15 blur-3xl animate-pulse" style={{ bottom: '18%', right: '22%' }}></div>
+
+        <div className="w-full max-w-md">
           {/* Logo and Title */}
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
@@ -213,8 +225,8 @@ const Login = () => {
           </div>
 
           {/* Login Form */}
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-8">
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <div className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow border border-slate-200 p-8">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
               {/* Username Field */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
@@ -226,10 +238,10 @@ const Login = () => {
                     type="text"
                     id="email"
                     {...register('email')}
-                    className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${
+                    className={`w-full pl-10 pr-4 py-2.5 border rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all placeholder:text-slate-400 ${
                       errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300'
                     }`}
-                    placeholder="Enter your username (e.g., ADM2026001, PARENT-ADM2026001, EMP001)"
+                    placeholder="Enter your username"
                   />
                 </div>
                 {errors.email && (
@@ -259,7 +271,7 @@ const Login = () => {
                     type={showPassword ? 'text' : 'password'}
                     id="password"
                     {...register('password')}
-                    className={`w-full pl-10 pr-12 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${
+                    className={`w-full pl-10 pr-12 py-2.5 border rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all placeholder:text-slate-400 ${
                       errors.password ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-300'
                     }`}
                     placeholder="Enter your password"
@@ -267,7 +279,7 @@ const Login = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
@@ -279,7 +291,7 @@ const Login = () => {
 
               {/* Success Message */}
               {successMessage && (
-                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center space-x-2">
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2.5 rounded-lg text-sm flex items-center space-x-2">
                   <CheckCircle className="w-4 h-4 flex-shrink-0" />
                   <span>{successMessage}</span>
                 </div>
@@ -287,14 +299,14 @@ const Login = () => {
 
               {/* Error Message */}
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-lg text-sm">
                   {error}
                 </div>
               )}
 
               {/* Resend Confirmation */}
               {showResendConfirmation && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl text-sm">
+                <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2.5 rounded-lg text-sm">
                   <p className="mb-2">Didn't receive the confirmation email?</p>
                   <button
                     type="button"
@@ -309,10 +321,10 @@ const Login = () => {
 
               {/* Resend Message */}
               {resendMessage && (
-                <div className={`px-4 py-3 rounded-xl text-sm ${
+                <div className={`px-4 py-2.5 rounded-lg text-sm border ${
                   resendMessage.includes('successfully') 
-                    ? 'bg-green-50 border border-green-200 text-green-700' 
-                    : 'bg-red-50 border border-red-200 text-red-700'
+                    ? 'bg-green-50 border-green-200 text-green-700' 
+                    : 'bg-red-50 border-red-200 text-red-700'
                 }`}>
                   {resendMessage}
                 </div>
@@ -322,15 +334,21 @@ const Login = () => {
               <button
                 type="submit"
                 disabled={isLoading || !isValid}
-                className="w-full bg-amber-600 text-white py-3 px-4 rounded-xl font-semibold hover:bg-amber-700 focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-amber-600 text-white py-2.5 px-4 rounded-lg font-medium hover:bg-amber-700 focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
               >
-                {isLoading ? 'Signing in...' : 'Sign In'}
+                {isLoading && (
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                )}
+                <span>{isLoading ? 'Signing in' : 'Sign In'}</span>
               </button>
 
               {/* Divider */}
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-300"></div>
+                  <div className="w-full border-t border-slate-200"></div>
                 </div>
                 <div className="relative flex justify-center text-sm">
                   <span className="px-2 bg-white text-slate-500">Or continue with</span>
@@ -341,7 +359,7 @@ const Login = () => {
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
-                className="w-full flex items-center justify-center space-x-3 bg-white border border-slate-300 text-slate-700 py-3 px-4 rounded-xl font-semibold hover:bg-slate-50 focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors"
+                className="w-full flex items-center justify-center space-x-3 bg-white border border-slate-300 text-slate-700 py-2.5 px-4 rounded-lg font-medium hover:bg-slate-50 focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition-colors"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -357,7 +375,7 @@ const Login = () => {
             <div className="mt-6 text-center">
               <p className="text-slate-600">
                 Don't have an account?{' '}
-                <Link to="/signup" className="text-amber-600 hover:text-amber-700 font-semibold">
+                <Link to="/signup" className="text-amber-600 hover:text-amber-700 font-medium">
                   Sign up
                 </Link>
               </p>

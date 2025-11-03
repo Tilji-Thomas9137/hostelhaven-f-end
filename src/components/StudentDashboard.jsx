@@ -25,7 +25,8 @@ import {
   Plus,
   Search,
   Filter,
-  Download
+  Download,
+  GraduationCap
 } from 'lucide-react';
 
 // Validation schema for complaints
@@ -55,6 +56,7 @@ const StudentDashboard = () => {
   const [editingComplaint, setEditingComplaint] = useState(null);
   const [editingLeaveRequest, setEditingLeaveRequest] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [recentActivity, setRecentActivity] = useState([]);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -85,6 +87,7 @@ const StudentDashboard = () => {
           fetchLeaveRequests();
           fetchAvailableRooms();
           fetchRoomRequests();
+          fetchRecentActivity();
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -159,7 +162,11 @@ const StudentDashboard = () => {
             },
             roommates: result.data.roommates || []
           });
+        } else {
+          setRoomDetails(null);
         }
+      } else {
+        setRoomDetails(null);
       }
     } catch (error) {
       console.error('Error fetching room details:', error);
@@ -171,7 +178,7 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:3002/api/payments?limit=10', {
+      const response = await fetch('http://localhost:3002/api/payments/student?limit=10', {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -199,7 +206,7 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:3002/api/complaints?limit=10', {
+      const response = await fetch('http://localhost:3002/api/student-complaints?limit=10', {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -229,7 +236,7 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:3002/api/leave-requests?limit=10', {
+      const response = await fetch('http://localhost:3002/api/student-leave-requests?limit=10', {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
@@ -241,8 +248,8 @@ const StudentDashboard = () => {
         setLeaveRequests(result.data.leaveRequests.map(request => ({
           id: request.id,
           reason: request.reason,
-          startDate: request.start_date,
-          endDate: request.end_date,
+          startDate: request.from_date,
+          endDate: request.to_date,
           status: request.status,
           createdAt: new Date(request.created_at).toLocaleDateString()
         })));
@@ -304,6 +311,110 @@ const StudentDashboard = () => {
     }
   };
 
+  const fetchRecentActivity = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const activities = [];
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      // Fetch recent payments
+      const paymentsResponse = await fetch('http://localhost:3002/api/payments/student?limit=5', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (paymentsResponse.ok) {
+        const paymentsResult = await paymentsResponse.json();
+        paymentsResult.data.payments.forEach(payment => {
+          const paymentDate = new Date(payment.created_at || payment.due_date);
+          if (paymentDate >= sevenDaysAgo) {
+            activities.push({
+              id: `payment-${payment.id}`,
+              type: 'payment',
+              title: payment.status === 'paid' ? 'Payment Received' : 'Payment Due',
+              description: payment.status === 'paid' 
+                ? `Payment of ₹${payment.amount} received for ${payment.month_year || new Date(payment.due_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`
+                : `Payment of ₹${payment.amount} due for ${payment.month_year || new Date(payment.due_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
+              timestamp: payment.created_at || payment.due_date,
+              status: payment.status,
+              icon: '💳',
+              color: payment.status === 'paid' ? 'green' : 'yellow'
+            });
+          }
+        });
+      }
+
+      // Fetch recent complaints
+      const complaintsResponse = await fetch('http://localhost:3002/api/student-complaints?limit=5', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (complaintsResponse.ok) {
+        const complaintsResult = await complaintsResponse.json();
+        complaintsResult.data.complaints.forEach(complaint => {
+          const complaintDate = new Date(complaint.created_at);
+          if (complaintDate >= sevenDaysAgo) {
+            activities.push({
+              id: `complaint-${complaint.id}`,
+              type: 'complaint',
+              title: 'Complaint Submitted',
+              description: `${complaint.title} (${complaint.category}) - Status: ${complaint.status}`,
+              timestamp: complaint.created_at,
+              status: complaint.status,
+              icon: '⚠️',
+              color: complaint.status === 'resolved' ? 'green' : complaint.status === 'in_progress' ? 'blue' : 'yellow'
+            });
+          }
+        });
+      }
+
+      // Fetch recent leave requests
+      const leaveResponse = await fetch('http://localhost:3002/api/student-leave-requests?limit=5', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (leaveResponse.ok) {
+        const leaveResult = await leaveResponse.json();
+        leaveResult.data.leaveRequests.forEach(request => {
+          const leaveDate = new Date(request.created_at);
+          if (leaveDate >= sevenDaysAgo) {
+            activities.push({
+              id: `leave-${request.id}`,
+              type: 'leave_request',
+              title: 'Leave Request Submitted',
+              description: `${request.reason} from ${new Date(request.from_date).toLocaleDateString()} to ${new Date(request.to_date).toLocaleDateString()} - Status: ${request.status}`,
+              timestamp: request.created_at,
+              status: request.status,
+              icon: '📅',
+              color: request.status === 'approved' ? 'green' : request.status === 'rejected' ? 'red' : 'purple'
+            });
+          }
+        });
+      }
+
+      // Sort activities by timestamp (most recent first) and take the latest 10
+      const sortedActivities = activities
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, 10);
+
+      setRecentActivity(sortedActivities);
+    } catch (error) {
+      console.error('Error fetching recent activity:', error);
+      setRecentActivity([]);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -353,20 +464,33 @@ const StudentDashboard = () => {
       <div className="space-y-8">
         {/* Quick Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-                <Building2 className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-slate-800">Room Assignment</h3>
-                <p className="text-2xl font-bold text-slate-900">{roomDetails?.roomNumber || 'Not Assigned'}</p>
-                {roomDetails && (
+          {roomDetails ? (
+            <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800">Room Assignment</h3>
+                  <p className="text-2xl font-bold text-slate-900">{roomDetails.roomNumber}</p>
                   <p className="text-sm text-slate-600">Floor {roomDetails.floor} • {roomDetails.roomType}</p>
-                )}
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gray-100 text-gray-600 rounded-xl flex items-center justify-center">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800">Room Status</h3>
+                  <p className="text-2xl font-bold text-slate-900">Not Assigned</p>
+                  <p className="text-sm text-slate-600">Contact administration for room allocation</p>
+                </div>
+              </div>
+            </div>
+          )}
           
           <div className="bg-white rounded-2xl shadow-lg border border-amber-100 p-6">
             <div className="flex items-center space-x-4">
@@ -428,78 +552,29 @@ const StudentDashboard = () => {
           </div>
           
           <div className="space-y-4">
-            {/* Recent Payments */}
-            {payments.slice(0, 3).map((payment) => (
-              <div key={`payment-${payment.id}`} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  payment.status === 'paid' ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'
-                }`}>
-                  <CreditCard className="w-5 h-5" />
+            {recentActivity.length > 0 ? (
+              recentActivity.map((activity) => (
+                <div key={activity.id} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                  <div className="text-2xl">{activity.icon}</div>
+                  <div className="flex-1">
+                    <p className="font-medium text-slate-800">{activity.title}</p>
+                    <p className="text-sm text-slate-600">{activity.description}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {new Date(activity.timestamp).toLocaleDateString()} at {new Date(activity.timestamp).toLocaleTimeString()}
+                    </p>
+                  </div>
+                  <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    activity.color === 'green' ? 'bg-green-100 text-green-700' :
+                    activity.color === 'red' ? 'bg-red-100 text-red-700' :
+                    activity.color === 'blue' ? 'bg-blue-100 text-blue-700' :
+                    activity.color === 'purple' ? 'bg-purple-100 text-purple-700' :
+                    'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {activity.status}
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">
-                    Payment {payment.status === 'paid' ? 'received' : 'due'} for {payment.month}
-                  </p>
-                  <p className="text-sm text-slate-600">
-                    ${payment.amount} • {payment.status === 'paid' ? payment.paidDate : payment.dueDate}
-                  </p>
-                </div>
-                <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  payment.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {payment.status}
-                </div>
-              </div>
-            ))}
-            
-            {/* Recent Complaints */}
-            {complaints.slice(0, 2).map((complaint) => (
-              <div key={`complaint-${complaint.id}`} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  complaint.status === 'resolved' ? 'bg-green-100 text-green-600' : 
-                  complaint.status === 'in_progress' ? 'bg-blue-100 text-blue-600' : 'bg-yellow-100 text-yellow-600'
-                }`}>
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">{complaint.title}</p>
-                  <p className="text-sm text-slate-600">Submitted on {complaint.createdAt}</p>
-                </div>
-                <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  complaint.status === 'resolved' ? 'bg-green-100 text-green-700' : 
-                  complaint.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {complaint.status.replace('_', ' ')}
-                </div>
-              </div>
-            ))}
-            
-            {/* Recent Leave Requests */}
-            {leaveRequests.slice(0, 2).map((request) => (
-              <div key={`leave-${request.id}`} className="flex items-center space-x-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  request.status === 'approved' ? 'bg-green-100 text-green-600' : 
-                  request.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-purple-100 text-purple-600'
-                }`}>
-                  <Calendar className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">{request.reason}</p>
-                  <p className="text-sm text-slate-600">
-                    {request.startDate} to {request.endDate}
-                  </p>
-                </div>
-                <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  request.status === 'approved' ? 'bg-green-100 text-green-700' : 
-                  request.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700'
-                }`}>
-                  {request.status}
-                </div>
-              </div>
-            ))}
-
-            {/* Show message if no recent activity */}
-            {payments.length === 0 && complaints.length === 0 && leaveRequests.length === 0 && (
+              ))
+            ) : (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Clock className="w-8 h-8 text-slate-400" />
@@ -770,7 +845,7 @@ const StudentDashboard = () => {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">Rent:</span>
-                  <span className="font-medium">${room.rentAmount}/month</span>
+                  <span className="font-medium">₹{room.rentAmount}/month</span>
                 </div>
               </div>
               
@@ -846,7 +921,7 @@ const StudentDashboard = () => {
       console.log('Submitting complaint with data:', formData);
       console.log('Session token:', session.access_token);
 
-      const response = await fetch('http://localhost:3002/api/complaints', {
+      const response = await fetch('http://localhost:3002/api/student-complaints', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -861,6 +936,7 @@ const StudentDashboard = () => {
       if (response.ok) {
         setShowComplaintModal(false);
         fetchComplaints(); // Refresh complaints list
+        fetchRecentActivity(); // Refresh recent activity
         // Show success message
         alert('Complaint submitted successfully!');
       } else {
@@ -882,7 +958,7 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:3002/api/leave-requests', {
+      const response = await fetch('http://localhost:3002/api/student-leave-requests', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -894,6 +970,7 @@ const StudentDashboard = () => {
       if (response.ok) {
         setShowLeaveModal(false);
         fetchLeaveRequests(); // Refresh leave requests list
+        fetchRecentActivity(); // Refresh recent activity
         alert('Leave request submitted successfully!');
       } else {
         const error = await response.json();
@@ -924,7 +1001,7 @@ const StudentDashboard = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch(`http://localhost:3002/api/complaints/${editingComplaint.id}`, {
+      const response = await fetch(`http://localhost:3002/api/student-complaints/${editingComplaint.id}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -937,6 +1014,7 @@ const StudentDashboard = () => {
         setShowEditComplaintModal(false);
         setEditingComplaint(null);
         fetchComplaints();
+        fetchRecentActivity(); // Refresh recent activity
         alert('Complaint updated successfully!');
       } else {
         const error = await response.json();

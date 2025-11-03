@@ -123,7 +123,7 @@ export const complaintSchema = z.object({
     .min(10, 'Description must be at least 10 characters')
     .max(2000, 'Description is too long'),
   category: z
-    .enum(['general', 'maintenance', 'cleanliness', 'noise', 'security', 'food', 'wifi'], {
+    .enum(['noise', 'wifi_issue', 'bathroom_dirt', 'electric', 'plumbing', 'mess_food_quality'], {
       required_error: 'Category is required'
     }),
   priority: z

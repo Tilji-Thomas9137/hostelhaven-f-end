@@ -80,12 +80,14 @@ const RouteGuard = ({ children, requiredRole = null }) => {
 
           if (response.ok) {
             const result = await response.json();
+            console.log('🔍 RouteGuard: API response:', result);
             setUser(result.data.user);
             
             // Check role authorization if required
             if (requiredRole && result.data.user.role !== requiredRole) {
               console.log('❌ RouteGuard: Role mismatch. Required:', requiredRole, 'User role:', result.data.user.role);
               console.log('🔍 RouteGuard: Full user data:', result.data.user);
+              console.log('🔍 RouteGuard: Current path:', location.pathname);
               setIsAuthorized(false);
               setIsLoading(false);
               clearTimeout(timeoutId);
@@ -94,6 +96,8 @@ const RouteGuard = ({ children, requiredRole = null }) => {
             }
             
             console.log('✅ RouteGuard: Authentication successful for role:', result.data.user.role);
+            console.log('🔍 RouteGuard: Required role:', requiredRole);
+            console.log('🔍 RouteGuard: Current path:', location.pathname);
             setIsAuthorized(true);
             setIsLoading(false);
             clearTimeout(timeoutId);

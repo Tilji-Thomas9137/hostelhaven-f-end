@@ -21,6 +21,8 @@ const StudentLeaveRequest = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [hasRoomAllocation, setHasRoomAllocation] = useState(false);
+  const [checkingRoom, setCheckingRoom] = useState(true);
   const [formData, setFormData] = useState({
     leave_type: 'personal',
     from_date: '',
@@ -30,8 +32,37 @@ const StudentLeaveRequest = () => {
   });
 
   useEffect(() => {
+    checkRoomAllocation();
     fetchLeaveRequests();
   }, []);
+
+  const checkRoomAllocation = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setCheckingRoom(false);
+        return;
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3002'}/api/student-cleaning-requests/check-room-allocation`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        setHasRoomAllocation(true);
+      } else {
+        setHasRoomAllocation(false);
+      }
+    } catch (error) {
+      console.error('Error checking room allocation:', error);
+      setHasRoomAllocation(false);
+    } finally {
+      setCheckingRoom(false);
+    }
+  };
 
   const fetchLeaveRequests = async () => {
     try {
@@ -68,6 +99,19 @@ const StudentLeaveRequest = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
+
+      // Check if student has room allocation before allowing leave request
+      const roomCheckResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3002'}/api/student-cleaning-requests/check-room-allocation`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!roomCheckResponse.ok) {
+        const roomCheckResult = await roomCheckResponse.json();
+        throw new Error(roomCheckResult.message || 'You must have an allocated room to submit leave requests');
+      }
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
       const response = await fetch(`${API_BASE_URL}/api/student-leave-requests`, {
@@ -194,8 +238,15 @@ const StudentLeaveRequest = () => {
           <p className="text-sm text-slate-600 mt-1">Submit and manage your leave requests</p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
+          onClick={() => {
+            if (!hasRoomAllocation) {
+              showNotification('You must have an allocated room to submit leave requests. Please complete room allocation first.', 'error');
+              return;
+            }
+            setShowModal(true);
+          }}
+          disabled={!hasRoomAllocation || checkingRoom}
+          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-4 h-4" />
           <span>New Request</span>
@@ -210,11 +261,24 @@ const StudentLeaveRequest = () => {
             <h3 className="text-lg font-semibold text-slate-800 mb-2">No Leave Requests</h3>
             <p className="text-slate-600 mb-6">You haven't submitted any leave requests yet.</p>
             <button
-              onClick={() => setShowModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              onClick={() => {
+                if (!hasRoomAllocation) {
+                  showNotification('You must have an allocated room to submit leave requests. Please complete room allocation first.', 'error');
+                  return;
+                }
+                setShowModal(true);
+              }}
+              disabled={!hasRoomAllocation || checkingRoom}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Submit Your First Request
             </button>
+            {!hasRoomAllocation && !checkingRoom && (
+              <p className="mt-4 text-sm text-blue-600 flex items-center justify-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                Room allocation required to submit leave requests
+              </p>
+            )}
           </div>
         ) : (
           leaveRequests.map((request) => (

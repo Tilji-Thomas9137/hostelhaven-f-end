@@ -9,6 +9,7 @@ import ComprehensiveAdminDashboard from './components/dashboard/ComprehensiveAdm
 import WardenDashboard from './components/dashboard/WardenDashboard';
 import OperationsDashboard from './components/dashboard/OperationsDashboard';
 import ParentDashboard from './components/dashboard/ParentDashboard';
+import ParentDashboardNew from './components/dashboard/ParentDashboardNew';
 import TestDashboard from './components/TestDashboard';
 import AuthCallback from './components/AuthCallback';
 import ForgotPassword from './components/ForgotPassword';
@@ -53,7 +54,8 @@ const AppContent = () => {
         <Route path="/admin-dashboard" element={<RouteGuard requiredRole="admin"><ComprehensiveAdminDashboard /></RouteGuard>} />
         <Route path="/warden-dashboard" element={<RouteGuard requiredRole="warden"><WardenDashboard /></RouteGuard>} />
         <Route path="/operations-dashboard" element={<RouteGuard requiredRole="hostel_operations_assistant"><OperationsDashboard /></RouteGuard>} />
-        <Route path="/parent-dashboard" element={<RouteGuard requiredRole="parent"><ParentDashboard /></RouteGuard>} />
+        <Route path="/parent-dashboard" element={<RouteGuard requiredRole="parent"><ParentDashboardNew /></RouteGuard>} />
+        <Route path="/parent-dashboard-old" element={<RouteGuard requiredRole="parent"><ParentDashboard /></RouteGuard>} />
         <Route path="/test" element={<TestDashboard />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/services" element={<ServicesPage />} />

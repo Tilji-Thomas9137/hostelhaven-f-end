@@ -91,8 +91,14 @@ const OperationsDashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-4 border-amber-500 border-t-transparent"></div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50 to-amber-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative">
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-orange-500 absolute top-0 left-1/2 transform -translate-x-1/2"></div>
+          </div>
+          <p className="text-gray-700 font-semibold text-lg mt-4 animate-pulse">Loading dashboard...</p>
+        </div>
       </div>
     );
   }
@@ -104,28 +110,31 @@ const OperationsDashboard = () => {
   // Show access denied message if user is not operations assistant
   if (user.role !== 'hostel_operations_assistant') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
-        <div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md mx-4">
-          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-8 h-8" />
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50 to-amber-50 flex items-center justify-center">
+        <div className="text-center bg-white rounded-3xl shadow-2xl p-8 max-w-md mx-4 border border-orange-100">
+          <div className="relative inline-block mb-6">
+            <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-pink-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
+            <div className="relative w-20 h-20 bg-gradient-to-r from-red-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
+              <Shield className="w-10 h-10 text-white" />
+            </div>
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Access Denied</h2>
-          <p className="text-slate-600 mb-4">
+          <h2 className="text-3xl font-extrabold bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent mb-3">Access Denied</h2>
+          <p className="text-gray-600 mb-4 text-lg">
             You need hostel operations assistant privileges to access this dashboard.
           </p>
-          <p className="text-sm text-slate-500 mb-6">
-            Current role: <span className="font-medium">{user.role || 'student'}</span>
+          <p className="text-sm text-gray-500 mb-8 font-semibold">
+            Current role: <span className="text-red-600 font-bold">{user.role || 'student'}</span>
           </p>
           <div className="space-y-3">
             <button
               onClick={() => navigate('/dashboard')}
-              className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+              className="w-full px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl hover:from-orange-600 hover:to-amber-600 transition-all duration-300 transform hover:scale-105 shadow-lg font-semibold"
             >
               Go to My Dashboard
             </button>
             <button
               onClick={handleLogout}
-              className="w-full px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+              className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-300 transform hover:scale-105 font-semibold"
             >
               Logout
             </button>
@@ -199,10 +208,10 @@ const OperationsDashboard = () => {
       <div className="flex items-center justify-between">
                       <div>
               <p className="text-sm font-medium text-slate-600">Total Requests</p>
-              <p className="text-3xl font-bold text-blue-600">-</p>
+              <p className="text-3xl font-bold text-orange-600">-</p>
                       </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-blue-600" />
+            <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+              <Building2 className="w-6 h-6 text-orange-600" />
                     </div>
         </div>
       </div>
@@ -223,8 +232,8 @@ const OperationsDashboard = () => {
                     </div>
                           </button>
 
-          <button className="flex items-center space-x-3 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl hover:from-blue-100 hover:to-indigo-100 transition-all duration-200">
-            <Calendar className="w-6 h-6 text-blue-600" />
+          <button className="flex items-center space-x-3 p-4 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl hover:from-orange-100 hover:to-amber-100 transition-all duration-200">
+            <Calendar className="w-6 h-6 text-orange-600" />
             <div className="text-left">
               <p className="font-semibold text-slate-800">Schedule Cleaning</p>
               <p className="text-sm text-slate-600">Plan and schedule cleaning activities</p>
@@ -251,17 +260,17 @@ const OperationsDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50 to-amber-50 flex">
       {/* Sidebar Navigation */}
-      <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40 animate-slideInLeft">
-        <div className="p-6 border-b border-amber-200/50">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl flex items-center justify-center">
-              <Activity className="w-6 h-6 text-white" />
+      <div className="w-64 bg-gradient-to-b from-white to-orange-50 shadow-2xl border-r border-orange-200 fixed h-full z-10">
+        <div className="p-6 border-b border-orange-200">
+          <div className="flex items-center space-x-3 group">
+            <div className="w-12 h-12 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300">
+              <Activity className="w-7 h-7 text-white animate-pulse" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-800">Operations</h1>
-              <p className="text-sm text-slate-600">Hostel Assistant</p>
+              <h1 className="text-lg font-extrabold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">Operations</h1>
+              <p className="text-xs text-orange-600 font-semibold">Hostel Assistant</p>
             </div>
           </div>
         </div>
@@ -271,33 +280,36 @@ const OperationsDashboard = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left transform hover:scale-105 ${
                   activeTab === tab.id
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg'
-                  : 'text-slate-700 hover:bg-amber-50 hover:text-amber-600'
+                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-xl animate-slideInRight'
+                  : 'text-slate-700 hover:bg-gradient-to-r hover:from-orange-50 hover:to-amber-50'
                 }`}
               >
-                <tab.icon className="w-5 h-5" />
-                <span className="font-medium">{tab.label}</span>
+                <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'animate-pulse' : ''}`} />
+                <span className="font-semibold">{tab.label}</span>
               </button>
             ))}
         </nav>
 
         {/* User Profile Section */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-amber-200/50">
-          <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-slate-50 to-amber-50 rounded-xl">
-            <div className="w-10 h-10 bg-gradient-to-r from-slate-500 to-slate-600 rounded-full flex items-center justify-center">
-              <User className="w-5 h-5 text-white" />
+        <div className="absolute bottom-6 left-4 right-4">
+          <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-slate-50 to-orange-50 rounded-xl">
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full blur-md opacity-50 group-hover:opacity-75 transition-opacity animate-pulse"></div>
+              <div className="relative w-10 h-10 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full flex items-center justify-center shadow-lg">
+                <User className="w-5 h-5 text-white" />
+              </div>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-800 truncate">
+              <p className="text-sm font-bold text-slate-800 truncate">
                 {user.full_name || 'Operations Assistant'}
               </p>
               <p className="text-xs text-slate-600 truncate">{user.email}</p>
             </div>
           <button
             onClick={handleLogout}
-              className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors transform hover:scale-110"
               title="Logout"
           >
               <LogOut className="w-4 h-4" />
@@ -307,25 +319,28 @@ const OperationsDashboard = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 ml-64 animate-slideInRight">
+      <div className="flex-1 ml-64">
         {/* Top Header */}
-        <header className="bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm p-6 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
-          <div className="flex items-center space-x-4 group">
-            <div className="w-12 h-12 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl flex items-center justify-center group-hover:scale-105 transition-all duration-200 shadow-lg">
-              <Activity className="w-6 h-6 text-white" />
-            </div>
+        <header className="bg-gradient-to-r from-white via-orange-50 to-amber-50 shadow-lg p-6 border-b-2 border-orange-200">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-slate-800 gradient-text">
+              <h1 className="text-4xl font-extrabold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">
                 {tabs.find(tab => tab.id === activeTab)?.label || 'Operations Dashboard'}
               </h1>
-              <p className="text-slate-600 group-hover:text-amber-600 transition-colors duration-200">
-                {activeTab === 'cleaning' ? 'Manage hostel cleaning operations' : 
-                 activeTab === 'rooms' ? 'Manage student room requests and allocations' :
-                 activeTab === 'profile' ? 'View and manage your staff profile information' :
-                 'Manage hostel operations'}
-              </p>
+              <p className="text-sm text-gray-600 mt-1">Welcome back, {user.full_name || 'Operations Assistant'}!</p>
             </div>
-            <div className="ml-auto" />
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <p className="font-bold text-gray-900">{user.full_name || 'Operations Assistant'}</p>
+                <p className="text-sm text-gray-500 font-semibold">Operations Staff</p>
+              </div>
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full blur-md opacity-50 group-hover:opacity-75 transition-opacity animate-pulse"></div>
+                <div className="relative w-14 h-14 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
+                  <Activity className="w-7 h-7 text-white" />
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 

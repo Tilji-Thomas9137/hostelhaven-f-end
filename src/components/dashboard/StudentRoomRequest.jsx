@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNotification } from '../../contexts/NotificationContext';
+import useBeautifulToast from '../../hooks/useBeautifulToast';
 import { supabase } from '../../lib/supabase';
 import ConfirmationModal from '../ui/ConfirmationModal';
 import { 
@@ -18,6 +19,7 @@ import {
 
 const StudentRoomRequest = () => {
   const { showNotification, clearAllNotifications } = useNotification();
+  const { showSuccess, showError, showWarning } = useBeautifulToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingRoomId, setLoadingRoomId] = useState(null);
@@ -26,6 +28,7 @@ const StudentRoomRequest = () => {
   const [rooms, setRooms] = useState([]);
   const [myRequest, setMyRequest] = useState(null);
   const [myAllocation, setMyAllocation] = useState(null);
+  const [requestedRoom, setRequestedRoom] = useState(null);
   
   // UI states
   const [activeTab, setActiveTab] = useState('overview');
@@ -52,6 +55,45 @@ const StudentRoomRequest = () => {
   useEffect(() => {
     updateRequestStatus();
   }, [myRequest, myAllocation]);
+
+
+  // Resolve requested room details when request or rooms list changes
+  useEffect(() => {
+    const resolveRequestedRoom = async () => {
+      setRequestedRoom(null);
+      if (!myRequest) return;
+
+      // If API already embedded room details
+      if (myRequest.rooms?.room_number) {
+        setRequestedRoom(myRequest.rooms);
+        return;
+      }
+
+      // If the room exists in currently loaded rooms
+      if (myRequest.requested_room_id) {
+        const inList = rooms.find((r) => r.id === myRequest.requested_room_id);
+        if (inList) {
+          setRequestedRoom(inList);
+          return;
+        }
+
+        // Fetch directly from DB when not in available rooms list
+        try {
+          const { data: roomData, error } = await supabase
+            .from('rooms')
+            .select('*')
+            .eq('id', myRequest.requested_room_id)
+            .single();
+          if (!error && roomData) setRequestedRoom(roomData);
+        } catch (_) {
+          /* no-op: keep graceful fallback */
+        }
+      }
+    };
+
+    resolveRequestedRoom();
+  }, [myRequest, rooms]);
+
 
   const updateRequestStatus = () => {
     if (myAllocation && myAllocation.allocation_status === 'confirmed') {
@@ -109,17 +151,25 @@ const StudentRoomRequest = () => {
       ]);
     } catch (error) {
       console.error('Error fetching data:', error);
-      showNotification('Unable to load room allocation data. Please refresh the page or try again later.', 'error');
+      showError('Unable to load room allocation data. Please refresh the page or try again later.', {
+        duration: 5000,
+        title: 'Loading Error!'
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleManualRefresh = async () => {
-    console.log('🔄 Manual refresh triggered');
-    showNotification('Refreshing data...', 'info', 2000);
+    showSuccess('Refreshing data...', {
+      duration: 2000,
+      title: 'Refreshing...'
+    });
     await fetchAllData();
-    showNotification('Data refreshed successfully!', 'success', 2000);
+    showSuccess('Data refreshed successfully!', {
+      duration: 2000,
+      title: 'Refresh Complete!'
+    });
   };
 
   const fetchRooms = async () => {
@@ -159,11 +209,17 @@ const StudentRoomRequest = () => {
       } else {
         const errorText = await response.text();
         console.error('Failed to fetch rooms:', response.status, errorText);
-        showNotification('Failed to load available rooms', 'error');
+        showError('Failed to load available rooms', {
+          duration: 4000,
+          title: 'Loading Failed!'
+        });
       }
     } catch (error) {
       console.error('Error fetching rooms:', error);
-      showNotification('Network error while loading rooms', 'error');
+      showError('Network error while loading rooms', {
+        duration: 4000,
+        title: 'Network Error!'
+      });
     }
   };
 
@@ -202,9 +258,10 @@ const StudentRoomRequest = () => {
         
         console.log('📋 All requests from API:', requests);
         
-        // Filter out cancelled requests and find the most recent active request
+        // Filter out cancelled and rejected requests - only show active ones
         const activeRequests = requests.filter(req => {
-          const isActive = req.status && req.status.toLowerCase() !== 'cancelled';
+          const status = req.status?.toLowerCase();
+          const isActive = status && !['cancelled', 'rejected'].includes(status);
           console.log(`🔍 Request ${req.id}: status=${req.status}, isActive=${isActive}`);
           return isActive;
         });
@@ -235,10 +292,12 @@ const StudentRoomRequest = () => {
   const fetchMyAllocation = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) {
+        setMyAllocation(null);
+        return;
+      }
 
-      // This would fetch the user's current room allocation
-      // For now, we'll check if they have a room_id in their profile
+      // Fetch user's room_id from users table
       const { data: userProfile, error } = await supabase
         .from('users')
         .select('room_id')
@@ -247,35 +306,49 @@ const StudentRoomRequest = () => {
 
       if (!error && userProfile?.room_id) {
         // Fetch room details separately if room_id exists
-        const { data: roomData } = await supabase
+        const { data: roomData, error: roomError } = await supabase
           .from('rooms')
           .select('*')
           .eq('id', userProfile.room_id)
           .single();
         
-        setMyAllocation({
-          room_id: userProfile.room_id,
-          room: roomData,
-          allocation_status: 'confirmed'
-        });
+        if (!roomError && roomData) {
+          const allocation = {
+            room_id: userProfile.room_id,
+            room: roomData,
+            allocation_status: 'confirmed',
+            allocationDate: new Date().toISOString(),
+            endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() // 1 year from now
+          };
+          setMyAllocation(allocation);
+        } else {
+          setMyAllocation(null);
+        }
       } else {
         setMyAllocation(null);
       }
     } catch (error) {
       console.error('Error fetching my allocation:', error);
+      setMyAllocation(null);
     }
   };
 
   const handleRequestRoom = async (room) => {
     // Check if student can submit a new request
     if (!canSubmitNewRequest) {
-      showNotification(requestMessage, 'error');
+      showError(requestMessage, {
+        duration: 4000,
+        title: 'Request Not Allowed!'
+      });
       return;
     }
     
     // Additional check for room allocation
     if (myAllocation && myAllocation.allocation_status === 'confirmed') {
-      showNotification('You already have a confirmed room allocation. No new requests can be submitted.', 'error');
+      showError('You already have a confirmed room allocation. No new requests can be submitted.', {
+        duration: 4000,
+        title: 'Allocation Already Confirmed!'
+      });
       return;
     }
     setIsSubmitting(true);
@@ -285,23 +358,27 @@ const StudentRoomRequest = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        showNotification('Please log in to submit a room request', 'error');
+        showError('Please log in to submit a room request', {
+          duration: 4000,
+          title: 'Authentication Required!'
+        });
         return;
       }
 
-      // Create a room request for the specific room with payment information
+      // Create a room request for the specific room using unified endpoint
       const requestData = {
         preferred_room_type: (room.room_type || '').toLowerCase(),
         preferred_floor: room.floor || 1,
         urgency_level: 'medium',
-        special_requirements: `REQUESTED_ROOM_ID:${room.id}`
+        requested_room_id: room.id, // Use the new field instead of special_requirements
+        special_requirements: `Requested specific room: ${room.room_number}`
       };
 
       console.log('Requesting room:', room);
       console.log('Request data:', requestData);
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      const response = await fetch(`${API_BASE_URL}/api/room-requests`, {
+      const response = await fetch(`${API_BASE_URL}/api/room-requests/unified/create`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -333,7 +410,10 @@ const StudentRoomRequest = () => {
           console.log('🔄 Final refresh after submission...');
           await fetchAllData();
         }, 2000);
-        showNotification(`Room request for Room ${room.room_number} submitted successfully! Monthly rent: ₹${room.price}/month. You will be notified once approved and payment details will be sent to you and your parents.`, 'success', 6000);
+        showSuccess(`Room request for Room ${room.room_number} submitted successfully! Monthly rent: ₹${room.price}/month. You will be notified once approved and payment details will be sent to you and your parents.`, {
+          duration: 6000,
+          title: 'Room Request Submitted! 🎉'
+        });
       } else {
         let errorMessage = 'Request submission failed';
         try {
@@ -343,7 +423,10 @@ const StudentRoomRequest = () => {
           // If response is not JSON, use status text
           errorMessage = `Server error: ${response.status} ${response.statusText}`;
         }
-        showNotification(errorMessage, 'error');
+        showError(errorMessage, {
+          duration: 5000,
+          title: 'Submission Failed!'
+        });
         errorNotificationShown = true;
         throw new Error(errorMessage);
       }
@@ -351,7 +434,10 @@ const StudentRoomRequest = () => {
       console.error('Error creating request:', error);
       // Only show notification if it's not already shown above
       if (!errorNotificationShown) {
-        showNotification('Unable to connect to our servers. Please check your internet connection and try again.', 'error');
+        showError('Unable to connect to our servers. Please check your internet connection and try again.', {
+          duration: 5000,
+          title: 'Connection Error!'
+        });
       }
       throw error; // Re-throw to be caught by the form handler
     } finally {
@@ -370,7 +456,10 @@ const StudentRoomRequest = () => {
 
     // Handle dummy requests specially
     if (requestToCancel === 'dummy-request-id') {
-      showNotification('This is a test request and cannot be cancelled. Please submit a real room request to test cancellation.', 'info');
+      showWarning('This is a test request and cannot be cancelled. Please submit a real room request to test cancellation.', {
+        duration: 4000,
+        title: 'Test Request!'
+      });
       setShowCancelModal(false);
       return;
     }
@@ -386,74 +475,68 @@ const StudentRoomRequest = () => {
         return;
       }
 
-      // Try DELETE first, fallback to PUT cancel if DELETE fails
+      // Use the new unified cancel endpoint
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
-      console.log('📡 Sending DELETE request to:', `${API_BASE_URL}/api/room-allocation/request/${requestToCancel}`);
+      console.log('📡 Sending PUT cancel request to:', `${API_BASE_URL}/api/room-requests/unified/${requestToCancel}/cancel`);
       
-      let response = await fetch(`${API_BASE_URL}/api/room-allocation/request/${requestToCancel}`, {
-        method: 'DELETE',
+      const response = await fetch(`${API_BASE_URL}/api/room-requests/unified/${requestToCancel}/cancel`, {
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
 
-      // If DELETE fails, try PUT cancel as fallback
-      if (!response.ok) {
-        console.log('⚠️ DELETE failed, trying PUT cancel as fallback...');
-        response = await fetch(`${API_BASE_URL}/api/room-allocation/request/${requestToCancel}/cancel`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-      }
-
-      console.log('📊 DELETE response status:', response.status);
+      console.log('📊 Cancel response status:', response.status);
       
       if (response.ok) {
         const responseData = await response.json();
-        console.log('✅ Request deleted successfully from database:', responseData);
+        console.log('✅ Request cancelled successfully:', responseData);
         
-        // Clear the request from local state immediately since it's deleted
+        // Clear the request from local state immediately
         setMyRequest(null);
         
-        // Clear all data to force a complete refresh
-        setRooms([]);
-        setMyAllocation(null);
-        
-        // Reset request status to reflect no request
+        // Reset all related states
         setRequestStatus('none');
         setCanSubmitNewRequest(true);
         setRequestMessage('');
         
+        // Clear rooms and allocation to force refresh
+        setRooms([]);
+        setMyAllocation(null);
+        
         // Small delay to ensure database is updated
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 500));
         
-        console.log('🔄 About to fetch my request after deletion...');
         // Force a fresh fetch to ensure UI is updated
-        await fetchMyRequest();
-        
-        console.log('🔄 About to fetch all data after deletion...');
-        // Also refresh all data to update status cards
+        console.log('🔄 Refreshing data after cancellation...');
         await fetchAllData();
-        showNotification('Your room request has been successfully cancelled.', 'success', 3000);
+        
+        showSuccess('Your room request has been successfully cancelled.', {
+          duration: 3000,
+          title: 'Request Cancelled! ✅'
+        });
       } else {
         let errorMessage = 'Unable to cancel your room request at this time. Please try again or contact support if the issue persists.';
         try {
           const errorData = await response.json();
-          console.error('❌ DELETE request failed:', response.status, errorData);
+          console.error('❌ Cancel request failed:', response.status, errorData);
           errorMessage = errorData.message || errorData.error || errorMessage;
         } catch (parseError) {
           console.error('❌ Failed to parse error response:', parseError);
           errorMessage = `Server error: ${response.status} ${response.statusText}`;
         }
-        showNotification(errorMessage, 'error');
+        showError(errorMessage, {
+          duration: 5000,
+          title: 'Cancellation Failed!'
+        });
       }
     } catch (error) {
       console.error('Error cancelling request:', error);
-      showNotification('Unable to cancel your room request at this time. Please check your connection and try again.', 'error');
+      showError('Unable to cancel your room request at this time. Please check your connection and try again.', {
+        duration: 5000,
+        title: 'Cancellation Error!'
+      });
     } finally {
       setIsSubmitting(false);
       setRequestToCancel(null);
@@ -476,12 +559,44 @@ const StudentRoomRequest = () => {
             </div>
             <div>
               <h3 className="text-lg font-semibold text-slate-800">My Room</h3>
-              <p className="text-2xl font-bold text-slate-900">
-                {myAllocation ? `Room ${myAllocation.room?.room_number || 'N/A'}` : 'Not Assigned'}
-              </p>
-              <p className="text-sm text-slate-600">
-                {myAllocation ? myAllocation.room?.room_type || 'Standard' : 'No room allocated'}
-              </p>
+              {isLoading ? (
+                <div className="animate-pulse">
+                  <div className="h-8 bg-slate-200 rounded w-24 mb-2"></div>
+                  <div className="h-4 bg-slate-200 rounded w-32"></div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {/* Check myAllocation first, then myRequest.rooms, then myRequest.requested_room */}
+                    {(() => {
+                      if (myAllocation && myAllocation.room?.room_number) {
+                        return `Room ${myAllocation.room.room_number}`;
+                      }
+                      if (myRequest?.rooms?.room_number) {
+                        return `Room ${myRequest.rooms.room_number}`;
+                      }
+                      if (requestedRoom?.room_number) {
+                        return `Room ${requestedRoom.room_number}`;
+                      }
+                      return 'Not Assigned';
+                    })()}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    {(() => {
+                      if (myAllocation && myAllocation.room?.room_type) {
+                        return myAllocation.room.room_type;
+                      }
+                      if (myRequest?.rooms?.room_type) {
+                        return myRequest.rooms.room_type;
+                      }
+                      if (requestedRoom?.room_type) {
+                        return requestedRoom.room_type || 'Standard';
+                      }
+                      return 'No room allocated';
+                    })()}
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -564,19 +679,19 @@ const StudentRoomRequest = () => {
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-slate-600">Room Number:</span>
-                    <span className="font-medium">{myAllocation.room_number || 'N/A'}</span>
+                    <span className="font-medium">{myAllocation.room?.room_number || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Floor:</span>
-                    <span className="font-medium">{myAllocation.floor || 'N/A'}</span>
+                    <span className="font-medium">{myAllocation.room?.floor || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Room Type:</span>
-                    <span className="font-medium capitalize">{myAllocation.room_type || 'N/A'}</span>
+                    <span className="font-medium capitalize">{myAllocation.room?.room_type || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Monthly Rent:</span>
-                    <span className="font-medium">₹{myAllocation.monthly_rent || 'N/A'}</span>
+                    <span className="font-medium">₹{myAllocation.room?.price || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -590,11 +705,11 @@ const StudentRoomRequest = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Allocated Date:</span>
-                    <span className="font-medium">{myAllocation.allocated_at ? new Date(myAllocation.allocated_at).toLocaleDateString() : 'N/A'}</span>
+                    <span className="font-medium">{myAllocation.allocationDate ? new Date(myAllocation.allocationDate).toLocaleDateString() : 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Valid Until:</span>
-                    <span className="font-medium">{myAllocation.valid_until ? new Date(myAllocation.valid_until).toLocaleDateString() : 'N/A'}</span>
+                    <span className="font-medium">{myAllocation.endDate ? new Date(myAllocation.endDate).toLocaleDateString() : 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -657,34 +772,34 @@ const StudentRoomRequest = () => {
                 <p>
                   <span className="font-medium">Room Number:</span> 
                   <span className={`ml-2 px-2 py-1 rounded-full text-sm ${
-                    myRequest.status === 'allocated' && myRequest.rooms 
+                    (myRequest.status === 'allocated' || myRequest.status === 'approved') && (myRequest.rooms || myAllocation?.room?.room_number) 
                       ? 'bg-green-100 text-green-800' 
                       : 'bg-blue-100 text-blue-800'
                   }`}>
-                    {myRequest.status === 'allocated' && myRequest.rooms 
-                      ? myRequest.rooms.room_number 
-                      : (() => {
-                          // Extract requested room number from special_requirements
-                          if (myRequest.special_requirements) {
-                            console.log('🔍 Debug: special_requirements:', myRequest.special_requirements);
-                            console.log('🔍 Debug: available rooms:', rooms.map(r => ({ id: r.id, room_number: r.room_number })));
-                            const match = myRequest.special_requirements.match(/REQUESTED_ROOM_ID:([a-f0-9-]+)/i);
-                            if (match) {
-                              const requestedRoomId = match[1];
-                              console.log('🔍 Debug: extracted room ID:', requestedRoomId);
-                              const requestedRoom = rooms.find(room => room.id.toString() === requestedRoomId);
-                              console.log('🔍 Debug: found room:', requestedRoom);
-                              return requestedRoom ? requestedRoom.room_number : 'Room Requested';
-                            }
-                          }
-                          return 'Room Requested';
-                        })()}
+                    {(() => {
+                      // First check myAllocation (from users.room_id)
+                      if (myAllocation && myAllocation.room?.room_number) {
+                        return myAllocation.room.room_number;
+                      }
+                      
+                      // Then check myRequest.rooms (from API response)
+                      if (myRequest.rooms?.room_number) {
+                        return myRequest.rooms.room_number;
+                      }
+                      
+                      // Use resolved requestedRoom, if available
+                      if (requestedRoom?.room_number) {
+                        return requestedRoom.room_number;
+                      }
+                      
+                      return 'Room Requested';
+                    })()}
                   </span>
                 </p>
               </div>
             </div>
             
-            {myRequest.status === 'allocated' && myRequest.rooms ? (
+            {((myRequest.status === 'allocated' || myRequest.status === 'approved') && (myRequest.rooms || myAllocation?.room)) ? (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <h3 className="text-lg font-medium text-green-800 mb-3 flex items-center">
                   <div className="w-6 h-6 bg-green-100 text-green-600 rounded-lg flex items-center justify-center mr-2">
@@ -698,25 +813,39 @@ const StudentRoomRequest = () => {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="font-medium text-green-700">Room Number:</span>
-                    <p className="text-green-900 font-semibold">{myRequest.rooms.room_number}</p>
+                    <p className="text-green-900 font-semibold">
+                      {myAllocation?.room?.room_number || myRequest.rooms?.room_number || 'N/A'}
+                    </p>
                   </div>
                   <div>
                     <span className="font-medium text-green-700">Floor:</span>
-                    <p className="text-green-900">{myRequest.rooms.floor}</p>
+                    <p className="text-green-900">
+                      {myAllocation?.room?.floor || myRequest.rooms?.floor || 'N/A'}
+                    </p>
                   </div>
                   <div>
                     <span className="font-medium text-green-700">Type:</span>
-                    <p className="text-green-900">{myRequest.rooms.room_type}</p>
+                    <p className="text-green-900 capitalize">
+                      {myAllocation?.room?.room_type || myRequest.rooms?.room_type || 'N/A'}
+                    </p>
                   </div>
                   <div>
                     <span className="font-medium text-green-700">Price:</span>
-                    <p className="text-green-900">${myRequest.rooms.price}/month</p>
+                    <p className="text-green-900">
+                      ₹{myAllocation?.room?.price || myRequest.rooms?.price || 'N/A'}/month
+                    </p>
                   </div>
                 </div>
-                {myRequest.allocated_at && (
+                {(myRequest.allocated_at || myAllocation?.allocationDate) && (
                   <div className="mt-3 pt-3 border-t border-green-200">
                     <span className="font-medium text-green-700">Allocated:</span>
-                    <p className="text-green-900">{new Date(myRequest.allocated_at).toLocaleDateString()}</p>
+                    <p className="text-green-900">
+                      {myRequest.allocated_at 
+                        ? new Date(myRequest.allocated_at).toLocaleDateString()
+                        : myAllocation.allocationDate
+                        ? new Date(myAllocation.allocationDate).toLocaleDateString()
+                        : 'N/A'}
+                    </p>
                   </div>
                 )}
               </div>
@@ -805,7 +934,10 @@ const StudentRoomRequest = () => {
             <button
               onClick={() => {
                 if (!canSubmitNewRequest) {
-                  showNotification(requestMessage, 'error');
+                  showError(requestMessage, {
+                    duration: 4000,
+                    title: 'Request Not Allowed!'
+                  });
                   return;
                 }
                 setActiveTab('rooms');
@@ -833,7 +965,10 @@ const StudentRoomRequest = () => {
           <button
             onClick={() => {
               if (!canSubmitNewRequest) {
-                showNotification(requestMessage, 'error');
+                showError(requestMessage, {
+                  duration: 4000,
+                  title: 'Request Not Allowed!'
+                });
                 return;
               }
               setActiveTab('rooms');
@@ -968,7 +1103,7 @@ const StudentRoomRequest = () => {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-600">Price:</span>
-                <span className="font-medium text-green-600">${room.price}/month</span>
+                <span className="font-medium text-green-600">₹{room.price}/month</span>
               </div>
             </div>
             

@@ -143,10 +143,10 @@ const RoomManagement = ({ data = [], onRefresh }) => {
 
       // Use yearly rent for the update
       const updateData = {
-        room_number: formData.room_number,
-        floor: formData.floor,
+        // room_number is immutable; do not send
+        // floor is immutable; do not send
         room_type: formData.room_type,
-        monthly_rent: formData.yearly_rent || formData.monthly_rent * 12,
+        monthly_rent: formData.yearly_rent || (formData.monthly_rent ? formData.monthly_rent * 12 : undefined),
         status: formData.status
       };
 
@@ -625,12 +625,10 @@ const RoomManagement = ({ data = [], onRefresh }) => {
                   <input
                     type="text"
                     value={watchedRoomNumber || ''}
-                    onChange={(e) => {
-                      setValue('room_number', e.target.value);
-                    }}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange={() => { /* read-only */ }}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg bg-slate-50 text-slate-500 cursor-not-allowed"
                     placeholder="e.g., A101, B205"
-                    required
+                    readOnly
                   />
                   {errors.room_number && (
                     <p className="text-red-600 text-sm mt-1">{errors.room_number.message}</p>
@@ -644,10 +642,11 @@ const RoomManagement = ({ data = [], onRefresh }) => {
                   <select
                     value={watchedFloor || ''}
                     onChange={(e) => {
-                      setValue('floor', e.target.value);
+                      // floor is read-only during edit
+                      setValue('floor', watchedFloor);
                     }}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg bg-slate-50 text-slate-500 cursor-not-allowed"
+                    disabled
                   >
                     <option value="">Select floor</option>
                     <option value="1">1st Floor</option>
@@ -671,7 +670,6 @@ const RoomManagement = ({ data = [], onRefresh }) => {
                     onChange={(e) => {
                       const type = e.target.value;
                       setValue('room_type', type);
-                      // Set pricing based on type (yearly)
                       const yearlyByType = {
                         single: 28000,
                         double: 23000,
@@ -681,7 +679,8 @@ const RoomManagement = ({ data = [], onRefresh }) => {
                       setValue('yearly_rent', yr);
                       setValue('monthly_rent', yr ? Math.round(yr / 12) : 0);
                     }}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${ (selectedRoom?.current_occupancy || 0) > 0 ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`}
+                    disabled={(selectedRoom?.current_occupancy || 0) > 0}
                     required
                   >
                     <option value="">Select type</option>

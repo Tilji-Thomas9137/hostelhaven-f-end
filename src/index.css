@@ -4,10 +4,6 @@
 @tailwind utilities;
 
 @layer base {
-  * {
-    @apply border-amber-200;
-  }
-  
   body {
     @apply bg-amber-50 text-slate-800 font-sans;
     font-feature-settings: "rlig" 1, "calt" 1;
@@ -100,6 +96,22 @@
 
   .animate-heartbeat {
     animation: heartbeat 2s ease-in-out infinite;
+  }
+
+  .delay-100 {
+    animation-delay: 100ms;
+  }
+
+  .delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .delay-300 {
+    animation-delay: 300ms;
+  }
+
+  .delay-700 {
+    animation-delay: 700ms;
   }
 
   .animate-gradient {
@@ -538,18 +550,9 @@
   color: #1e293b;
 }
 
-/* Focus styles */
-*:focus {
-  outline: 2px solid rgba(251, 191, 36, 0.5);
-  outline-offset: 2px;
-}
+/* Focus styles removed to avoid conflicts with component styles */
 
-/* Smooth transitions for all elements */
-* {
-  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 150ms;
-}
+/* Global transition rule removed to avoid unintended overrides */
 
 /* Custom font classes */
 .font-serif {
@@ -565,11 +568,7 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Custom focus for accessibility */
-*:focus-visible {
-  outline: 2px solid #f59e0b;
-  outline-offset: 2px;
-}
+/* Focus-visible rule removed to avoid conflicts with existing CSS */
 
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {

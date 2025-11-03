@@ -85,10 +85,13 @@ const WardenDashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-purple-50 to-indigo-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto mb-4"></div>
-          <p className="text-slate-600">Loading warden dashboard...</p>
+          <div className="relative">
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-200 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-purple-500 absolute top-0 left-1/2 transform -translate-x-1/2"></div>
+          </div>
+          <p className="text-gray-700 font-semibold text-lg mt-4 animate-pulse">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -101,28 +104,31 @@ const WardenDashboard = () => {
 
   if (user.isNotWarden || !['warden', 'admin'].includes(user.role)) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center">
-        <div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md mx-4">
-          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-8 h-8" />
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-purple-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center bg-white rounded-3xl shadow-2xl p-8 max-w-md mx-4 border border-purple-100">
+          <div className="relative inline-block mb-6">
+            <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-pink-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
+            <div className="relative w-20 h-20 bg-gradient-to-r from-red-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
+              <Shield className="w-10 h-10 text-white" />
+            </div>
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Access Denied</h2>
-          <p className="text-slate-600 mb-4">
+          <h2 className="text-3xl font-extrabold bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent mb-3">Access Denied</h2>
+          <p className="text-gray-600 mb-4 text-lg">
             You need warden privileges to access this dashboard.
           </p>
-          <p className="text-sm text-slate-500 mb-6">
-            Current role: <span className="font-medium">{user.role || 'student'}</span>
+          <p className="text-sm text-gray-500 mb-8 font-semibold">
+            Current role: <span className="text-red-600 font-bold">{user.role || 'student'}</span>
           </p>
           <div className="space-y-3">
             <button
               onClick={() => navigate('/dashboard')}
-              className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+              className="w-full px-6 py-3 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition-all duration-300 transform hover:scale-105 shadow-lg font-semibold"
             >
               Go to My Dashboard
             </button>
             <button
               onClick={handleLogout}
-              className="w-full px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+              className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-300 transform hover:scale-105 font-semibold"
             >
               Logout
             </button>
@@ -673,32 +679,35 @@ const WardenDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-purple-50 to-indigo-50 flex">
       {/* Sidebar Navigation */}
-      <div className="w-64 bg-white shadow-xl border-r border-amber-200/50 fixed h-full z-40">
+      <div className="w-64 bg-gradient-to-b from-white to-purple-50 shadow-2xl border-r border-purple-200 fixed h-full z-10">
         {/* Logo */}
-        <div className="p-6 border-b border-amber-200/50">
-          <Link to="/" className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <Shield className="w-6 h-6 text-white" />
+        <div className="p-6 border-b border-purple-200">
+          <Link to="/" className="flex items-center space-x-3 group">
+            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300">
+              <Shield className="w-7 h-7 text-white animate-pulse" />
             </div>
             <div>
-              <span className="text-xl font-bold text-slate-900">HostelHaven</span>
-              <div className="text-xs text-slate-500">Warden Portal</div>
+              <span className="text-xl font-extrabold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">HostelHaven</span>
+              <div className="text-xs text-purple-600 font-semibold">Warden Portal</div>
             </div>
           </Link>
         </div>
 
         {/* User Profile */}
-        <div className="p-6 border-b border-amber-200/50">
+        <div className="p-6 border-b border-purple-200">
           <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-purple-600 rounded-full flex items-center justify-center">
-              <Shield className="w-6 h-6 text-white" />
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full blur-md opacity-50 group-hover:opacity-75 transition-opacity animate-pulse"></div>
+              <div className="relative w-12 h-12 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center shadow-lg">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
             </div>
-            <div>
-              <p className="font-medium text-slate-900">{user.fullName}</p>
-              <p className="text-sm text-slate-500">Warden</p>
-              <p className="text-xs text-slate-400">{user.email}</p>
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-slate-900 truncate">{user.fullName}</p>
+              <p className="text-sm text-purple-600 font-semibold">Warden</p>
+              <p className="text-xs text-slate-400 truncate">{user.email}</p>
             </div>
           </div>
         </div>
@@ -710,14 +719,14 @@ const WardenDashboard = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors text-left ${
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 text-left transform hover:scale-105 ${
                   activeTab === tab.id
-                    ? 'bg-purple-600 text-white shadow-lg'
-                    : 'text-slate-600 hover:bg-purple-50 hover:text-purple-700'
+                    ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-xl animate-slideInRight'
+                    : 'text-slate-600 hover:bg-gradient-to-r hover:from-purple-50 hover:to-indigo-50'
                 }`}
               >
-                <tab.icon className="w-5 h-5" />
-                <span className="font-medium">{tab.label}</span>
+                <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'animate-pulse' : ''}`} />
+                <span className="font-semibold">{tab.label}</span>
               </button>
             ))}
           </div>
@@ -727,10 +736,10 @@ const WardenDashboard = () => {
         <div className="absolute bottom-6 left-4 right-4">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center space-x-3 px-4 py-3 text-slate-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 rounded-xl transition-all duration-300 transform hover:scale-105 border border-gray-200 hover:border-red-300"
           >
             <LogOut className="w-5 h-5" />
-            <span className="font-medium">Logout</span>
+            <span className="font-semibold">Logout</span>
           </button>
         </div>
       </div>
@@ -738,16 +747,25 @@ const WardenDashboard = () => {
       {/* Main Content */}
       <div className="flex-1 ml-64">
         {/* Top Header */}
-        <header className="bg-white/90 backdrop-blur-xl border-b border-amber-200/50 shadow-sm p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl flex items-center justify-center">
-              <Shield className="w-6 h-6 text-white" />
-            </div>
+        <header className="bg-gradient-to-r from-white via-purple-50 to-indigo-50 shadow-lg p-6 border-b-2 border-purple-200">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-slate-800">
+              <h1 className="text-4xl font-extrabold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
                 {tabs.find(tab => tab.id === activeTab)?.label || 'Warden Dashboard'}
               </h1>
-              <p className="text-slate-600">Manage student welfare and discipline</p>
+              <p className="text-sm text-gray-600 mt-1">Welcome back, {user.fullName || 'Warden'}!</p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <p className="font-bold text-gray-900">{user.fullName || 'Warden'}</p>
+                <p className="text-sm text-gray-500 font-semibold">Warden Account</p>
+              </div>
+              <div className="relative group">
+                <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full blur-md opacity-50 group-hover:opacity-75 transition-opacity animate-pulse"></div>
+                <div className="relative w-14 h-14 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
+                  <Shield className="w-7 h-7 text-white" />
+                </div>
+              </div>
             </div>
           </div>
         </header>
